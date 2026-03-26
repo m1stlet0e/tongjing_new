@@ -29,7 +29,13 @@ class PublishScreen extends StatefulWidget {
 class _PublishScreenState extends State<PublishScreen> {
   final _title = TextEditingController();
   final _caption = TextEditingController();
+  final _tips = TextEditingController();
   final _location = TextEditingController();
+  final _lat = TextEditingController();
+  final _lng = TextEditingController();
+  final _tagsInput = TextEditingController();
+  final List<Map<String, String>> _selectedTags = [];
+  String _tagType = 'scene';
 
   String? _imagePath;
   Map<String, dynamic>? _uploadData;
@@ -43,7 +49,11 @@ class _PublishScreenState extends State<PublishScreen> {
   void dispose() {
     _title.dispose();
     _caption.dispose();
+    _tips.dispose();
     _location.dispose();
+    _lat.dispose();
+    _lng.dispose();
+    _tagsInput.dispose();
     super.dispose();
   }
 
@@ -95,6 +105,10 @@ class _PublishScreenState extends State<PublishScreen> {
       setState(() {
         _uploadData = Map<String, dynamic>.from(data);
         _location.text = '未标记机位';
+        final lat = exif?['latitude'];
+        final lng = exif?['longitude'];
+        _lat.text = lat == null ? '' : '$lat';
+        _lng.text = lng == null ? '' : '$lng';
         _step = _Step.edit;
       });
     } on ApiException catch (e) {
@@ -119,6 +133,26 @@ class _PublishScreenState extends State<PublishScreen> {
     return null;
   }
 
+  void _addTagsFromInput() {
+    final raw = _tagsInput.text.trim();
+    if (raw.isEmpty) return;
+    final names = raw
+        .split(RegExp(r'[,，\s]+'))
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    for (final name in names) {
+      final exists = _selectedTags.any(
+        (e) => e['name'] == name && e['type'] == _tagType,
+      );
+      if (exists) continue;
+      if (_selectedTags.length >= 12) break;
+      _selectedTags.add({'name': name, 'type': _tagType});
+    }
+    _tagsInput.clear();
+    setState(() {});
+  }
+
   Future<void> _publish() async {
     if (_uploadData == null) return;
     final title = _title.text.trim();
@@ -137,9 +171,12 @@ class _PublishScreenState extends State<PublishScreen> {
         imageUrl: url,
         title: title,
         description: _caption.text.trim().isEmpty ? null : _caption.text.trim(),
+        shootingTips: _tips.text.trim().isEmpty ? null : _tips.text.trim(),
         locationName: _location.text.trim().isEmpty ? null : _location.text.trim(),
-        latitude: (ex?['latitude'] as num?)?.toDouble(),
-        longitude: (ex?['longitude'] as num?)?.toDouble(),
+        latitude: double.tryParse(_lat.text.trim()) ??
+            (ex?['latitude'] as num?)?.toDouble(),
+        longitude: double.tryParse(_lng.text.trim()) ??
+            (ex?['longitude'] as num?)?.toDouble(),
         exifData: ex == null
             ? null
             : {
@@ -152,6 +189,7 @@ class _PublishScreenState extends State<PublishScreen> {
                 'iso': ex['iso'],
                 'white_balance': ex['white_balance'],
               },
+        tags: _selectedTags,
       );
       if (!mounted) return;
       setState(() => _step = _Step.success);
@@ -174,8 +212,80 @@ class _PublishScreenState extends State<PublishScreen> {
       _title.clear();
       _caption.clear();
       _location.clear();
+      _tips.clear();
+      _lat.clear();
+      _lng.clear();
+      _tagsInput.clear();
+      _selectedTags.clear();
       _step = _Step.select;
     });
+  }
+
+  Widget _buildExifCard() {
+    final ex = _exifMap() ?? <String, dynamic>{};
+    final rows = <(String, String?)>[
+      ('设备', ex['camera_model']?.toString()),
+      ('镜头', ex['lens_model']?.toString()),
+      ('焦段', ex['focal_length']?.toString()),
+      ('光圈', ex['aperture']?.toString()),
+      ('快门', ex['shutter_speed']?.toString()),
+      ('ISO', ex['iso']?.toString()),
+      ('白平衡', ex['white_balance']?.toString()),
+    ];
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.borderLight),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'EXIF 参数',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          ...rows.map(
+            (r) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 70,
+                    child: Text(
+                      r.$1,
+                      style: const TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      (r.$2 == null || r.$2!.isEmpty) ? '未识别' : r.$2!,
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _tagTypeLabel(String type) {
+    switch (type) {
+      case 'style':
+        return '风格';
+      case 'gear':
+        return '设备';
+      default:
+        return '场景';
+    }
   }
 
   @override
@@ -237,12 +347,109 @@ class _PublishScreenState extends State<PublishScreen> {
                 ),
                 const SizedBox(height: 12),
                 TextField(
+                  controller: _tips,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: '拍摄 Tips（可选）',
+                    hintText: '例如：建议蓝调时段拍摄，长曝光 2s，三脚架稳定',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
                   controller: _location,
                   decoration: const InputDecoration(
                     labelText: '地点 / 机位',
                     border: OutlineInputBorder(),
                   ),
                 ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _lat,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          signed: true,
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: '纬度（可选）',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextField(
+                        controller: _lng,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          signed: true,
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: '经度（可选）',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _tagsInput,
+                  decoration: const InputDecoration(
+                    labelText: '标签（可选）',
+                    hintText: '多个标签用空格或逗号分隔，例如：夜景 城市 长曝光',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: SegmentedButton<String>(
+                        segments: const [
+                          ButtonSegment(value: 'scene', label: Text('场景')),
+                          ButtonSegment(value: 'style', label: Text('风格')),
+                          ButtonSegment(value: 'gear', label: Text('设备')),
+                        ],
+                        selected: {_tagType},
+                        onSelectionChanged: (v) {
+                          setState(() => _tagType = v.first);
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      onPressed: _addTagsFromInput,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.kleinBlue,
+                      ),
+                      child: const Text('添加'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                if (_selectedTags.isNotEmpty)
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: _selectedTags
+                        .map(
+                          (e) => InputChip(
+                            label: Text(
+                              '#${e['name']} · ${_tagTypeLabel(e['type'] ?? '')}',
+                            ),
+                            onDeleted: () {
+                              setState(() => _selectedTags.remove(e));
+                            },
+                          ),
+                        )
+                        .toList(),
+                  ),
+                const SizedBox(height: 12),
+                _buildExifCard(),
                 const SizedBox(height: 24),
                 FilledButton(
                   onPressed: _busy ? null : _publish,

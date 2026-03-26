@@ -12,6 +12,7 @@ import 'package:provider/provider.dart';
 import 'package:tongjing/models/photo_models.dart';
 import 'package:tongjing/providers/auth_provider.dart';
 import 'package:tongjing/services/api_service.dart';
+import 'package:tongjing/services/plan_store.dart';
 import 'package:tongjing/theme/app_colors.dart';
 
 /// `PhotoDetailScreen`：页面组件，负责构建界面布局并响应用户操作。
@@ -30,6 +31,7 @@ class PhotoDetailScreen extends StatefulWidget {
 ///
 /// 主要用于统一该模块的核心能力与数据结构边界。
 class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
+  final _planStore = PlanStore();
   PhotoDetail? _photo;
   bool _loading = true;
   String? _error;
@@ -125,6 +127,20 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
     }
     try {
       final fav = await auth.api.photoToggleFavorite(widget.photoId);
+      if (fav && _photo != null) {
+        await _planStore.upsert(
+          PlanItem(
+            photoId: _photo!.id,
+            title: _photo!.title ?? '未命名拍摄计划',
+            location: _photo!.locationName ?? '未标记机位',
+            imageUrl: _photo!.imageUrl,
+            cameraLine:
+                '${_photo!.cameraModel ?? '-'} | ${_photo!.focalLength ?? '-'} | f/${_photo!.aperture ?? '-'}',
+            tips: _photo!.shootingTips,
+            createdAt: DateTime.now().toIso8601String(),
+          ),
+        );
+      }
       setState(() {
         if (_photo != null) {
           _photo = PhotoDetail(
@@ -156,6 +172,17 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
           );
         }
       });
+      if (fav && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('已加入拍摄计划'),
+            action: SnackBarAction(
+              label: '查看',
+              onPressed: () => context.push('/my-plans'),
+            ),
+          ),
+        );
+      }
     } on ApiException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));

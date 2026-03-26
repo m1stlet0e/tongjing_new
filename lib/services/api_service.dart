@@ -146,6 +146,7 @@ class ApiService {
     int limit = 20,
     String uiTab = 'recommend',
     String? camera,
+    String? lens,
     String? scene,
   }) async {
     final q = <String, String>{
@@ -154,6 +155,7 @@ class ApiService {
       'tab': _tabApiValue(uiTab),
     };
     if (camera != null && camera.isNotEmpty) q['camera'] = camera;
+    if (lens != null && lens.isNotEmpty) q['lens'] = lens;
     if (scene != null && scene.isNotEmpty) q['scene'] = scene;
 
     final res = await http.get(
@@ -244,6 +246,7 @@ class ApiService {
     required String imageUrl,
     required String title,
     String? description,
+    String? shootingTips,
     String? locationName,
     double? latitude,
     double? longitude,
@@ -254,6 +257,7 @@ class ApiService {
       'image_url': imageUrl,
       'title': title,
       if (description != null) 'description': description,
+      if (shootingTips != null) 'shooting_tips': shootingTips,
       if (locationName != null) 'location_name': locationName,
       if (latitude != null) 'latitude': latitude,
       if (longitude != null) 'longitude': longitude,

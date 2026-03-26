@@ -31,11 +31,19 @@ class MapScreen extends StatefulWidget {
 /// 主要用于统一该模块的核心能力与数据结构边界。
 class _MapScreenState extends State<MapScreen> {
   final MapController _mapController = MapController();
+  final TextEditingController _search = TextEditingController();
   LatLng _center = const LatLng(31.2304, 121.4737);
   List<PhotoListItem> _markers = [];
   List<Map<String, dynamic>> _popular = [];
   bool _loading = true;
   String? _error;
+  String _radiusKm = '50';
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
 
   @override
   /// 组件初始化阶段执行一次，用于准备首屏数据与监听器。
@@ -68,7 +76,7 @@ class _MapScreenState extends State<MapScreen> {
       final photos = await api.mapPhotos(
         lat: _center.latitude,
         lng: _center.longitude,
-        radiusKm: '50',
+        radiusKm: _radiusKm,
       );
       final pop = await api.mapPopularSpots();
       setState(() {
@@ -87,21 +95,66 @@ class _MapScreenState extends State<MapScreen> {
   ///
   /// 方法：`build`。
   Widget build(BuildContext context) {
+    final query = _search.text.trim().toLowerCase();
+    final filteredMarkers = _markers.where((p) {
+      if (query.isEmpty) return true;
+      final title = (p.title ?? '').toLowerCase();
+      final location = (p.locationName ?? '').toLowerCase();
+      return title.contains(query) || location.contains(query);
+    }).toList();
+    final filteredPopular = _popular.where((s) {
+      if (query.isEmpty) return true;
+      final name = (s['location_name']?.toString() ?? '').toLowerCase();
+      return name.contains(query);
+    }).toList();
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: Text(
-                '机位地图',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.kleinBlue,
-                ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '机位地图',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.kleinBlue,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _search,
+                    onChanged: (_) => setState(() {}),
+                    decoration: const InputDecoration(
+                      hintText: '搜索地标或机位',
+                      prefixIcon: Icon(Icons.search),
+                      isDense: true,
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: ['5', '20', '50'].map((r) {
+                      return ChoiceChip(
+                        label: Text('${r}km'),
+                        selected: _radiusKm == r,
+                        onSelected: (_) {
+                          setState(() => _radiusKm = r);
+                          _load();
+                        },
+                      );
+                    }).toList(),
+                  ),
+                ],
               ),
             ),
             Expanded(
@@ -130,7 +183,7 @@ class _MapScreenState extends State<MapScreen> {
                     ),
                     MarkerLayer(
                       markers: [
-                        for (final p in _markers)
+                        for (final p in filteredMarkers)
                           if (p.latitude != null && p.longitude != null)
                             Marker(
                               point: LatLng(p.latitude!, p.longitude!),
@@ -205,9 +258,9 @@ class _MapScreenState extends State<MapScreen> {
                     Expanded(
                       child: ListView.builder(
                         padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-                        itemCount: _popular.length,
+                        itemCount: filteredPopular.length,
                         itemBuilder: (context, i) {
-                          final s = _popular[i];
+                          final s = filteredPopular[i];
                           final name =
                               s['location_name']?.toString() ?? '未知地点';
                           final cnt =
@@ -219,6 +272,15 @@ class _MapScreenState extends State<MapScreen> {
                                   color: AppColors.kleinBlue),
                               title: Text(name),
                               subtitle: Text('$cnt 张作品'),
+                              onTap: () {
+                                final lat = (s['latitude'] as num?)?.toDouble();
+                                final lng = (s['longitude'] as num?)?.toDouble();
+                                if (lat == null || lng == null) return;
+                                final ll = LatLng(lat, lng);
+                                setState(() => _center = ll);
+                                _mapController.move(ll, 14);
+                                _load();
+                              },
                             ),
                           );
                         },

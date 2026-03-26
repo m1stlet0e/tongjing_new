@@ -388,6 +388,16 @@ class _PhotoTile extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 2),
+                  Text(
+                    _cameraLine(item),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
                   Row(
                     children: [
                       Icon(Icons.favorite_border,
@@ -404,5 +414,19 @@ class _PhotoTile extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _cameraLine(PhotoListItem p) {
+    final parts = <String>[];
+    if (p.cameraModel != null && p.cameraModel!.isNotEmpty) {
+      parts.add(p.cameraModel!);
+    }
+    if (p.focalLength != null && p.focalLength!.isNotEmpty) {
+      parts.add(p.focalLength!);
+    }
+    if (p.aperture != null && p.aperture!.isNotEmpty) {
+      parts.add('f/${p.aperture}');
+    }
+    return parts.isEmpty ? '参数待补充' : parts.join(' | ');
   }
 }

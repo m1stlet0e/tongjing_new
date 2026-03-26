@@ -7,6 +7,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:tongjing/services/plan_store.dart';
 import 'package:tongjing/theme/app_colors.dart';
 
 /// `PlanScreen`：页面组件，负责构建界面布局并响应用户操作。
@@ -23,7 +24,31 @@ class PlanScreen extends StatefulWidget {
 ///
 /// 主要用于统一该模块的核心能力与数据结构边界。
 class _PlanScreenState extends State<PlanScreen> {
+  final _planStore = PlanStore();
+  List<PlanItem> _plans = [];
+  bool _loadingPlans = true;
   int _tab = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPlans();
+  }
+
+  Future<void> _loadPlans() async {
+    setState(() => _loadingPlans = true);
+    final plans = await _planStore.list();
+    if (!mounted) return;
+    setState(() {
+      _plans = plans;
+      _loadingPlans = false;
+    });
+  }
+
+  Future<void> _toggleDone(PlanItem item, bool? value) async {
+    await _planStore.setDone(item.photoId, value == true);
+    await _loadPlans();
+  }
 
   @override
   /// 构建当前组件的 Widget 树，并根据状态输出对应界面。
@@ -57,9 +82,7 @@ class _PlanScreenState extends State<PlanScreen> {
                 ),
               ],
             ),
-            Expanded(
-              child: _tab == 0 ? _plansList() : _challengesList(),
-            ),
+            Expanded(child: _tab == 0 ? _plansList() : _challengesList()),
           ],
         ),
       ),
@@ -99,29 +122,35 @@ class _PlanScreenState extends State<PlanScreen> {
   ///
   /// 方法：`_plansList`。
   Widget _plansList() {
-    final plans = [
-      (
-        '外滩夜景拍摄',
-        '上海·外滩观景台',
-        '今天日落前后为黄金时刻，建议携带三脚架。',
-      ),
-      (
-        '世纪公园晨雾',
-        '上海·世纪公园',
-        '清晨湿度高易有晨雾，中长焦更易出片。',
-      ),
-    ];
+    if (_loadingPlans) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_plans.isEmpty) {
+      return ListView(
+        children: const [
+          SizedBox(height: 120),
+          Center(child: Text('暂无计划，先去收藏感兴趣的作品')),
+        ],
+      );
+    }
     return ListView.separated(
       padding: const EdgeInsets.all(16),
-      itemCount: plans.length,
+      itemCount: _plans.length,
       separatorBuilder: (_, __) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
-        final p = plans[index];
+        final p = _plans[index];
         return Card(
           child: ListTile(
-            title: Text(p.$1),
-            subtitle: Text('${p.$2}\n${p.$3}', maxLines: 3),
+            title: Text(p.title),
+            subtitle: Text(
+              '${p.location}\n${p.cameraLine}${p.tips == null || p.tips!.isEmpty ? '' : '\n${p.tips}'}',
+              maxLines: 3,
+            ),
             isThreeLine: true,
+            leading: Checkbox(
+              value: p.done,
+              onChanged: (v) => _toggleDone(p, v),
+            ),
             trailing: TextButton(
               onPressed: () => context.push('/my-plans'),
               child: const Text('我的计划'),

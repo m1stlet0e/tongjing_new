@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:tongjing/providers/auth_provider.dart';
+import 'package:tongjing/services/plan_store.dart';
 import 'package:tongjing/theme/app_colors.dart';
 
 /// `MyPlansScreen`：页面组件，负责构建界面布局并响应用户操作。
@@ -25,7 +26,8 @@ class MyPlansScreen extends StatefulWidget {
 ///
 /// 主要用于统一该模块的核心能力与数据结构边界。
 class _MyPlansScreenState extends State<MyPlansScreen> {
-  List<_PlanRow> _plans = [];
+  final _planStore = PlanStore();
+  List<PlanItem> _plans = [];
   bool _loading = true;
 
   @override
@@ -44,15 +46,17 @@ class _MyPlansScreenState extends State<MyPlansScreen> {
       return;
     }
     setState(() => _loading = true);
-    // 原 RN 调用不存在的 /plans/my，此处使用与「计划」页一致的本地示例数据
-    await Future<void>.delayed(const Duration(milliseconds: 300));
+    final plans = await _planStore.list();
+    if (!mounted) return;
     setState(() {
-      _plans = [
-        _PlanRow('外滩夜景拍摄', '上海·外滩观景台', '2025-01-18 17:30'),
-        _PlanRow('世纪公园晨雾', '上海·世纪公园', '2025-01-20 06:00'),
-      ];
+      _plans = plans;
       _loading = false;
     });
+  }
+
+  Future<void> _toggleDone(PlanItem item, bool? value) async {
+    await _planStore.setDone(item.photoId, value == true);
+    await _load();
   }
 
   @override
@@ -95,8 +99,15 @@ class _MyPlansScreenState extends State<MyPlansScreen> {
                         return Card(
                           child: ListTile(
                             title: Text(p.title),
-                            subtitle: Text('${p.location}\n${p.time}', maxLines: 2),
+                            subtitle: Text(
+                              '${p.location}\n${p.cameraLine}${p.tips == null || p.tips!.isEmpty ? '' : '\n${p.tips}'}',
+                              maxLines: 2,
+                            ),
                             isThreeLine: true,
+                            leading: Checkbox(
+                              value: p.done,
+                              onChanged: (v) => _toggleDone(p, v),
+                            ),
                           ),
                         );
                       },
@@ -104,14 +115,4 @@ class _MyPlansScreenState extends State<MyPlansScreen> {
             ),
     );
   }
-}
-
-/// `_PlanRow`：核心类型定义，承载该模块的主要职责。
-///
-/// 主要用于统一该模块的核心能力与数据结构边界。
-class _PlanRow {
-  _PlanRow(this.title, this.location, this.time);
-  final String title;
-  final String location;
-  final String time;
 }
