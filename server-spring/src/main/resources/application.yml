@@ -1,0 +1,42 @@
+server:
+  port: 9092
+
+spring:
+  application:
+    name: tongjing-server
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+  datasource:
+    url: jdbc:postgresql://aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres?sslmode=require&prepareThreshold=0
+    username: postgres.qcscburadzpqquaxuvun
+    password: wb1994051601A@
+    hikari:
+      maximum-pool-size: 5
+      connection-timeout: 60000
+  jpa:
+    open-in-view: false
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+        default_schema: public
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    serialization:
+      write-dates-as-timestamps: false
+
+s3:
+  endpoint-url: ""
+  bucket: ""
+  region: cn-beijing
+  access-key: ""
+  secret-key: ""
+
+logging:
+  level:
+    org.hibernate.SQL: warn
