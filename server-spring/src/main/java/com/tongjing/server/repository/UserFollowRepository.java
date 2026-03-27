@@ -3,6 +3,7 @@ package com.tongjing.server.repository;
 import com.tongjing.server.entity.UserFollow;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface UserFollowRepository extends JpaRepository<UserFollow, Integer> {
@@ -34,4 +35,6 @@ public interface UserFollowRepository extends JpaRepository<UserFollow, Integer>
      * <p>方法名：deleteByFollowerIdAndFollowingId</p>
      */
     void deleteByFollowerIdAndFollowingId(Integer followerId, Integer followingId);
+
+    List<UserFollow> findByFollowerId(Integer followerId);
 }

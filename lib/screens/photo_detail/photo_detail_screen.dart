@@ -11,6 +11,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:tongjing/config/app_config.dart';
 import 'package:tongjing/models/photo_models.dart';
+import 'package:tongjing/models/plan_item.dart';
 import 'package:tongjing/providers/auth_provider.dart';
 import 'package:tongjing/services/api_service.dart';
 import 'package:tongjing/services/plan_store.dart';
@@ -58,15 +59,6 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
       await _syncPlanFlag();
       return;
     }
-    if (_isMockId(widget.photoId)) {
-      setState(() {
-        _loading = false;
-        _error = null;
-        _photo = _buildMockDetail(widget.photoId);
-      });
-      await _syncPlanFlag();
-      return;
-    }
     setState(() {
       _loading = true;
       _error = null;
@@ -86,11 +78,18 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
   Future<void> _syncPlanFlag() async {
     final p = _photo;
     if (p == null) return;
-    final has = await _planStore.containsPhoto(p.id);
-    if (mounted) setState(() => _inPlan = has);
+    final auth = context.read<AuthNotifier>();
+    if (!auth.isAuthenticated) {
+      if (mounted) setState(() => _inPlan = false);
+      return;
+    }
+    try {
+      final has = await _planStore.containsPhoto(auth.api, p.id);
+      if (mounted) setState(() => _inPlan = has);
+    } catch (_) {
+      if (mounted) setState(() => _inPlan = false);
+    }
   }
-
-  bool _isMockId(int id) => id >= 90000;
 
   Future<void> _addToPlan() async {
     final auth = context.read<AuthNotifier>();
@@ -100,18 +99,29 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
     }
     final p = _photo;
     if (p == null) return;
-    await _planStore.upsert(
-      PlanItem(
-        photoId: p.id,
-        title: p.title ?? '未命名拍摄计划',
-        location: p.locationName ?? '未标记机位',
-        imageUrl: p.imageUrl,
-        cameraLine:
-            '${p.cameraModel ?? '-'} | ${p.focalLength ?? '-'} | f/${p.aperture ?? '-'}',
-        tips: p.shootingTips,
-        createdAt: DateTime.now().toIso8601String(),
-      ),
-    );
+    try {
+      await _planStore.upsert(
+        auth.api,
+        PlanItem(
+          photoId: p.id,
+          title: p.title ?? '未命名拍摄计划',
+          location: p.locationName ?? '未标记机位',
+          imageUrl: p.imageUrl,
+          cameraLine:
+              '${p.cameraModel ?? '-'} | ${p.focalLength ?? '-'} | f/${p.aperture ?? '-'}',
+          tips: p.shootingTips,
+          createdAt: DateTime.now().toIso8601String(),
+        ),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      return;
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('加入失败：$e')));
+      return;
+    }
     if (!mounted) return;
     setState(() => _inPlan = true);
     ScaffoldMessenger.of(context).showSnackBar(
@@ -263,18 +273,23 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
     try {
       final fav = await auth.api.photoToggleFavorite(widget.photoId);
       if (fav && _photo != null) {
-        await _planStore.upsert(
-          PlanItem(
-            photoId: _photo!.id,
-            title: _photo!.title ?? '未命名拍摄计划',
-            location: _photo!.locationName ?? '未标记机位',
-            imageUrl: _photo!.imageUrl,
-            cameraLine:
-                '${_photo!.cameraModel ?? '-'} | ${_photo!.focalLength ?? '-'} | f/${_photo!.aperture ?? '-'}',
-            tips: _photo!.shootingTips,
-            createdAt: DateTime.now().toIso8601String(),
-          ),
-        );
+        try {
+          await _planStore.upsert(
+            auth.api,
+            PlanItem(
+              photoId: _photo!.id,
+              title: _photo!.title ?? '未命名拍摄计划',
+              location: _photo!.locationName ?? '未标记机位',
+              imageUrl: _photo!.imageUrl,
+              cameraLine:
+                  '${_photo!.cameraModel ?? '-'} | ${_photo!.focalLength ?? '-'} | f/${_photo!.aperture ?? '-'}',
+              tips: _photo!.shootingTips,
+              createdAt: DateTime.now().toIso8601String(),
+            ),
+          );
+        } catch (_) {
+          // 计划同步失败不阻断收藏成功
+        }
       }
       setState(() {
         if (_photo != null) {

@@ -168,50 +168,49 @@ class _PublishScreenState extends State<PublishScreen> {
     setState(() {});
   }
 
-  void _applyAiTagSuggestion() {
-    if (_selectedTags.length >= 12) return;
-    final ex = _exifMap();
-    final suggestions = <String>{};
-    final desc = _caption.text.trim();
-    final title = _title.text.trim();
-    final model = ex?['camera_model']?.toString() ?? '';
-    final lens = ex?['lens_model']?.toString() ?? '';
-
-    if (model.isNotEmpty) {
-      suggestions.add(model.contains('Sony') ? '索尼' : model);
-    }
-    if (lens.isNotEmpty) suggestions.add(lens);
-    if (desc.contains('夜') || title.contains('夜')) suggestions.add('夜景');
-    if (desc.contains('街') || title.contains('街')) suggestions.add('街拍');
-    if (desc.contains('人像') || title.contains('人像')) suggestions.add('人像');
-    if (desc.contains('建筑') || title.contains('建筑')) suggestions.add('建筑');
-    if (desc.contains('星') || title.contains('星')) suggestions.add('星空');
-    if (suggestions.isEmpty) {
-      suggestions.addAll(['旅行', '城市', '光影']);
-    }
-
-    for (final name in suggestions) {
-      if (_selectedTags.length >= 12) break;
-      final exists = _selectedTags.any((e) => e['name'] == name);
-      if (exists) continue;
-      _selectedTags.add({'name': name, 'type': 'scene'});
-    }
-    setState(() {});
+  Future<({String copy, List<Map<String, String>> tags})> _requestAiAssist() async {
+    final auth = context.read<AuthNotifier>();
+    return auth.api.aiPublishAssist(
+      title: _title.text.trim(),
+      description: _caption.text.trim().isEmpty ? null : _caption.text.trim(),
+      locationName: _location.text.trim().isEmpty ? null : _location.text.trim(),
+      exifData: _exifMap(),
+    );
   }
 
-  void _applyAiCopySuggestion() {
-    final ex = _exifMap();
-    final location = _location.text.trim().isEmpty ? '未知机位' : _location.text.trim();
-    final camera = ex?['camera_model']?.toString() ?? '相机';
-    final lens = ex?['lens_model']?.toString() ?? '镜头';
-    final sample =
-        '今天在$location尝试了这组画面。使用$camera 搭配$lens，'
-        '通过控制曝光节奏把现场氛围完整保留下来。建议在光线过渡时段到达机位，'
-        '先观察主体与背景层次，再决定构图与快门策略。';
-    setState(() {
-      _caption.text = sample;
-      _aiCopyHint = 'AI 文案已生成，可继续手动修改';
-    });
+  Future<void> _applyAiTagSuggestion() async {
+    if (_selectedTags.length >= 12) return;
+    try {
+      final ai = await _requestAiAssist();
+      for (final tag in ai.tags) {
+        if (_selectedTags.length >= 12) break;
+        final name = (tag['name'] ?? '').trim();
+        if (name.isEmpty) continue;
+        final exists = _selectedTags.any((e) => e['name'] == name);
+        if (exists) continue;
+        _selectedTags.add({'name': name, 'type': tag['type'] ?? 'scene'});
+      }
+      if (mounted) setState(() {});
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  Future<void> _applyAiCopySuggestion() async {
+    try {
+      final ai = await _requestAiAssist();
+      if (!mounted) return;
+      setState(() {
+        if (ai.copy.isNotEmpty) {
+          _caption.text = ai.copy;
+        }
+        _aiCopyHint = 'AI 文案已生成，可继续手动修改';
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
   }
 
   Future<void> _publish() async {

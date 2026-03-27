@@ -2,7 +2,7 @@ package com.tongjing.server.web;
 
 import com.tongjing.server.exif.ExifExtractor;
 import com.tongjing.server.security.CurrentUser;
-import com.tongjing.server.storage.S3StorageService;
+import com.tongjing.server.storage.UploadStorageFacade;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
@@ -17,17 +17,12 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class UploadController {
 
-    private static final int PRESIGN_SECONDS = 30 * 24 * 60 * 60;
-
-    private final S3StorageService s3StorageService;
+    private final UploadStorageFacade uploadStorageFacade;
     private final ExifExtractor exifExtractor;
 
     @PostMapping("/image")
     public Map<String, Object> uploadImage(@RequestPart("file") MultipartFile file) throws Exception {
-        int uid = requireUser();
-        if (!s3StorageService.isConfigured()) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "对象存储未配置");
-        }
+        requireUser();
         if (file == null || file.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请选择要上传的图片");
         }
@@ -35,12 +30,15 @@ public class UploadController {
         Map<String, Object> exif = exifExtractor.extract(bytes);
         String ext = extension(file.getOriginalFilename());
         String key = "photos/" + System.currentTimeMillis() + "_" + randomSuffix() + "." + ext;
-        s3StorageService.uploadFile(bytes, key, file.getContentType() != null ? file.getContentType() : "image/jpeg");
-        String url = s3StorageService.generatePresignedUrl(key, PRESIGN_SECONDS);
+        UploadStorageFacade.StoredObject stored =
+                uploadStorageFacade.store(
+                        bytes,
+                        key,
+                        file.getContentType() != null ? file.getContentType() : "image/jpeg");
 
         Map<String, Object> data = new LinkedHashMap<>();
-        data.put("url", url);
-        data.put("key", key);
+        data.put("url", stored.publicUrl());
+        data.put("key", stored.storageKey());
         data.put("filename", file.getOriginalFilename());
         data.put("size", file.getSize());
         data.put("mimetype", file.getContentType());
@@ -51,9 +49,6 @@ public class UploadController {
     @PostMapping("/images")
     public Map<String, Object> uploadImages(@RequestPart("files") MultipartFile[] files) throws Exception {
         requireUser();
-        if (!s3StorageService.isConfigured()) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "对象存储未配置");
-        }
         if (files == null || files.length == 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请选择要上传的图片");
         }
@@ -69,11 +64,14 @@ public class UploadController {
             Map<String, Object> exif = exifExtractor.extract(bytes);
             String ext = extension(file.getOriginalFilename());
             String key = "photos/" + System.currentTimeMillis() + "_" + randomSuffix() + "." + ext;
-            s3StorageService.uploadFile(bytes, key, file.getContentType() != null ? file.getContentType() : "image/jpeg");
-            String url = s3StorageService.generatePresignedUrl(key, PRESIGN_SECONDS);
+            UploadStorageFacade.StoredObject stored =
+                    uploadStorageFacade.store(
+                            bytes,
+                            key,
+                            file.getContentType() != null ? file.getContentType() : "image/jpeg");
             Map<String, Object> item = new LinkedHashMap<>();
-            item.put("url", url);
-            item.put("key", key);
+            item.put("url", stored.publicUrl());
+            item.put("key", stored.storageKey());
             item.put("filename", file.getOriginalFilename());
             item.put("size", file.getSize());
             item.put("mimetype", file.getContentType());
@@ -86,18 +84,22 @@ public class UploadController {
     @PostMapping("/avatar")
     public Map<String, Object> avatar(@RequestPart("file") MultipartFile file) throws Exception {
         int uid = requireUser();
-        if (!s3StorageService.isConfigured()) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "对象存储未配置");
-        }
         if (file == null || file.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请选择要上传的头像");
         }
         byte[] bytes = file.getBytes();
         String ext = extension(file.getOriginalFilename());
         String key = "avatars/" + uid + "_" + System.currentTimeMillis() + "." + ext;
-        s3StorageService.uploadFile(bytes, key, file.getContentType() != null ? file.getContentType() : "image/jpeg");
-        String url = s3StorageService.generatePresignedUrl(key, PRESIGN_SECONDS);
-        return Map.of("success", true, "data", Map.of("url", url, "key", key));
+        UploadStorageFacade.StoredObject stored =
+                uploadStorageFacade.store(
+                        bytes,
+                        key,
+                        file.getContentType() != null ? file.getContentType() : "image/jpeg");
+        return Map.of(
+                "success",
+                true,
+                "data",
+                Map.of("url", stored.publicUrl(), "key", stored.storageKey()));
     }
 
     /**

@@ -29,6 +29,7 @@ public class PhotoService {
     private final PhotoFavoriteRepository photoFavoriteRepository;
     private final PhotoCommentRepository photoCommentRepository;
     private final UserRepository userRepository;
+    private final UserFollowRepository userFollowRepository;
 
     public Map<String, Object> listFeed(
             int page, int limit, String tab, String camera, String lens, String scene, Integer currentUserId) {
@@ -38,6 +39,9 @@ public class PhotoService {
                         .and(PhotoSpecifications.hasSceneTag(scene));
         if ("following".equals(tab)) {
             spec = spec.and(PhotoSpecifications.authoredByFollowedUsers(currentUserId));
+        }
+        if ("recommend".equals(tab)) {
+            return listRecommendFeed(page, limit, spec, currentUserId);
         }
         Sort sort =
                 "hot".equals(tab)
@@ -49,6 +53,88 @@ public class PhotoService {
                 enrichPhotos(result.getContent(), currentUserId);
         long total = result.getTotalElements();
         return wrapPage(photos, page, limit, total);
+    }
+
+    private Map<String, Object> listRecommendFeed(
+            int page, int limit, Specification<Photo> spec, Integer currentUserId) {
+        Sort baseSort = Sort.by(Sort.Order.desc("createdAt"));
+        List<Photo> candidates = photoRepository.findAll(spec, baseSort);
+        if (candidates.isEmpty()) {
+            return wrapPage(List.of(), page, limit, 0);
+        }
+
+        Map<Integer, List<PhotoTag>> tagsBy =
+                photoTagRepository.findByPhotoIdIn(candidates.stream().map(Photo::getId).toList()).stream()
+                        .collect(Collectors.groupingBy(PhotoTag::getPhotoId));
+
+        Map<Integer, Integer> tagPreference = new HashMap<>();
+        Set<Integer> followedAuthors = new HashSet<>();
+        if (currentUserId != null) {
+            buildPreference(tagPreference, followedAuthors, currentUserId);
+        }
+
+        List<Photo> ranked = new ArrayList<>(candidates);
+        ranked.sort(
+                (a, b) ->
+                        Double.compare(
+                                recommendScore(b, tagsBy, tagPreference, followedAuthors),
+                                recommendScore(a, tagsBy, tagPreference, followedAuthors)));
+
+        int total = ranked.size();
+        int from = Math.max(0, (page - 1) * limit);
+        int to = Math.min(total, from + limit);
+        if (from >= to) {
+            return wrapPage(List.of(), page, limit, total);
+        }
+        List<Map<String, Object>> photos = enrichPhotos(ranked.subList(from, to), currentUserId);
+        return wrapPage(photos, page, limit, total);
+    }
+
+    private void buildPreference(
+            Map<Integer, Integer> tagPreference, Set<Integer> followedAuthors, Integer currentUserId) {
+        List<Integer> likedPhotoIds = photoLikeRepository.findByUserId(currentUserId).stream()
+                .map(PhotoLike::getPhotoId)
+                .filter(Objects::nonNull)
+                .toList();
+        List<Integer> favPhotoIds = photoFavoriteRepository.findByUserId(currentUserId).stream()
+                .map(PhotoFavorite::getPhotoId)
+                .filter(Objects::nonNull)
+                .toList();
+        Set<Integer> seeds = new LinkedHashSet<>();
+        seeds.addAll(likedPhotoIds);
+        seeds.addAll(favPhotoIds);
+        if (!seeds.isEmpty()) {
+            for (PhotoTag t : photoTagRepository.findByPhotoIdIn(seeds)) {
+                int w = "scene".equalsIgnoreCase(t.getTagType()) ? 4 : 2;
+                tagPreference.merge((t.getTagName() + "|" + t.getTagType()).hashCode(), w, Integer::sum);
+            }
+        }
+        followedAuthors.addAll(
+                userFollowRepository.findByFollowerId(currentUserId).stream()
+                        .map(UserFollow::getFollowingId)
+                        .filter(Objects::nonNull)
+                        .toList());
+    }
+
+    private double recommendScore(
+            Photo photo,
+            Map<Integer, List<PhotoTag>> tagsBy,
+            Map<Integer, Integer> tagPreference,
+            Set<Integer> followedAuthors) {
+        double score = 0.0;
+        score += nz(photo.getLikesCount()) * 1.8;
+        score += nz(photo.getFavoritesCount()) * 2.2;
+        score += nz(photo.getCommentsCount()) * 1.1;
+        Instant created = photo.getCreatedAt() != null ? photo.getCreatedAt() : Instant.now();
+        long hours = Math.max(1, java.time.Duration.between(created, Instant.now()).toHours());
+        score += 80.0 / Math.sqrt(hours);
+        if (photo.getUserId() != null && followedAuthors.contains(photo.getUserId())) {
+            score += 35.0;
+        }
+        for (PhotoTag t : tagsBy.getOrDefault(photo.getId(), List.of())) {
+            score += tagPreference.getOrDefault((t.getTagName() + "|" + t.getTagType()).hashCode(), 0);
+        }
+        return score;
     }
 
     /**

@@ -3,6 +3,7 @@ package com.tongjing.server.repository;
 import com.tongjing.server.entity.PhotoLike;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface PhotoLikeRepository extends JpaRepository<PhotoLike, Integer> {
@@ -27,4 +28,6 @@ public interface PhotoLikeRepository extends JpaRepository<PhotoLike, Integer> {
      * <p>方法名：deleteByPhotoId</p>
      */
     void deleteByPhotoId(Integer photoId);
+
+    List<PhotoLike> findByUserId(Integer userId);
 }

@@ -11,7 +11,6 @@ com/tongjing/server/web/UserController.class
 com/tongjing/server/service/MapService$Agg.class
 com/tongjing/server/service/UserService.class
 com/tongjing/server/storage/S3StorageService.class
-com/tongjing/server/web/UploadController.class
 com/tongjing/server/service/AuthService.class
 com/tongjing/server/service/SpotService.class
 com/tongjing/server/TongjingServerApplication.class

@@ -7,6 +7,9 @@
 - JDK 17+
 - Maven 3.9+
 - 已存在的业务表（与原 Supabase / Drizzle 迁移一致）
+- **Flyway**：启动时会执行 `src/main/resources/db/migration` 下的脚本（当前含 `shoot_plans`）。已有库首次运行会 `baseline-on-migrate` 再应用新版本。
+- **本地上传**：未配置 S3 `endpoint-url` / `bucket` 时，上传写入 `tongjing.upload.local-dir`（默认 `./data/uploads`），返回的 `url` 指向 `GET /api/v1/local-media/...`。真机调试请设置环境变量 **`TONGJING_PUBLIC_BASE_URL`** 为电脑局域网可访问地址（如 `http://192.168.1.5:9091`）。
+- **拍摄计划 API**：`GET/PUT/PATCH/DELETE /api/v1/shoot-plans`（需登录），与 Flutter 计划 Tab 对齐。
 
 ## 配置
 

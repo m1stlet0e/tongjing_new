@@ -7,6 +7,10 @@
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import 'package:tongjing/models/challenge_models.dart';
+import 'package:tongjing/models/plan_item.dart';
+import 'package:tongjing/providers/auth_provider.dart';
 import 'package:tongjing/services/plan_store.dart';
 import 'package:tongjing/theme/app_colors.dart';
 
@@ -26,28 +30,82 @@ class PlanScreen extends StatefulWidget {
 class _PlanScreenState extends State<PlanScreen> {
   final _planStore = PlanStore();
   List<PlanItem> _plans = [];
+  List<ChallengeItem> _challenges = [];
   bool _loadingPlans = true;
+  bool _loadingChallenges = true;
   int _tab = 0;
 
   @override
   void initState() {
     super.initState();
-    _loadPlans();
-  }
-
-  Future<void> _loadPlans() async {
-    setState(() => _loadingPlans = true);
-    final plans = await _planStore.list();
-    if (!mounted) return;
-    setState(() {
-      _plans = plans;
-      _loadingPlans = false;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadPlans();
+      _loadChallenges();
     });
   }
 
+  Future<void> _loadPlans() async {
+    if (!mounted) return;
+    setState(() => _loadingPlans = true);
+    final auth = context.read<AuthNotifier>();
+    if (!auth.isAuthenticated) {
+      if (mounted) {
+        setState(() {
+          _plans = [];
+          _loadingPlans = false;
+        });
+      }
+      return;
+    }
+    try {
+      final plans = await _planStore.list(auth.api);
+      if (!mounted) return;
+      setState(() {
+        _plans = plans;
+        _loadingPlans = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _plans = [];
+        _loadingPlans = false;
+      });
+    }
+  }
+
   Future<void> _toggleDone(PlanItem item, bool? value) async {
-    await _planStore.setDone(item.photoId, value == true);
-    await _loadPlans();
+    final auth = context.read<AuthNotifier>();
+    final id = item.planId;
+    if (!auth.isAuthenticated || id == null) return;
+    try {
+      await _planStore.setDone(auth.api, id, value == true);
+      await _loadPlans();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('更新失败：$e')),
+      );
+    }
+  }
+
+  Future<void> _loadChallenges() async {
+    if (!mounted) return;
+    setState(() => _loadingChallenges = true);
+    try {
+      final auth = context.read<AuthNotifier>();
+      final list = await auth.api.challengesList();
+      if (!mounted) return;
+      setState(() {
+        _challenges = list;
+        _loadingChallenges = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _challenges = [];
+        _loadingChallenges = false;
+      });
+    }
   }
 
   @override
@@ -122,14 +180,30 @@ class _PlanScreenState extends State<PlanScreen> {
   ///
   /// 方法：`_plansList`。
   Widget _plansList() {
+    final auth = context.watch<AuthNotifier>();
     if (_loadingPlans) {
       return const Center(child: CircularProgressIndicator());
+    }
+    if (!auth.isAuthenticated) {
+      return ListView(
+        children: [
+          const SizedBox(height: 120),
+          const Center(child: Text('登录后查看与云端同步的拍摄计划')),
+          const SizedBox(height: 16),
+          Center(
+            child: FilledButton(
+              onPressed: () => context.push('/login'),
+              child: const Text('去登录'),
+            ),
+          ),
+        ],
+      );
     }
     if (_plans.isEmpty) {
       return ListView(
         children: const [
           SizedBox(height: 120),
-          Center(child: Text('暂无计划，先去收藏感兴趣的作品')),
+          Center(child: Text('暂无计划，在作品详情页加入拍摄计划')),
         ],
       );
     }
@@ -165,59 +239,38 @@ class _PlanScreenState extends State<PlanScreen> {
   ///
   /// 方法：`_challengesList`。
   Widget _challengesList() {
-    final items = [
-      ('城市建筑·长焦挑战', '用长焦捕捉建筑线条与光影', 256, 12),
-      ('星空·银河挑战', '银河、星轨或星空风景', 128, 28),
-    ];
+    if (_loadingChallenges) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_challenges.isEmpty) {
+      return ListView(
+        children: [
+          const SizedBox(height: 120),
+          const Center(child: Text('暂无挑战')),
+          TextButton(onPressed: _loadChallenges, child: const Text('刷新')),
+        ],
+      );
+    }
     return ListView.separated(
       padding: const EdgeInsets.all(16),
-      itemCount: items.length + 1,
+      itemCount: _challenges.length,
       separatorBuilder: (_, __) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
-        if (index == 0) {
-          return Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF0E2A7B), AppColors.kleinBlue],
-              ),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '2026 春日微距大赏',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                SizedBox(height: 6),
-                Text(
-                  '上传微距题材作品参与评选，赢取首页推荐位',
-                  style: TextStyle(color: Color(0xFFDDE3F6)),
-                ),
-              ],
-            ),
-          );
-        }
-        final c = items[index - 1];
+        final c = _challenges[index];
         return Card(
           clipBehavior: Clip.antiAlias,
           child: InkWell(
-            onTap: () => context.push('/challenges'),
+            onTap: () => context.push('/challenges?id=${c.id}'),
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(c.$1, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+                  Text(c.title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
                   const SizedBox(height: 6),
-                  Text(c.$2, style: const TextStyle(color: AppColors.textSecondary)),
+                  Text(c.description, style: const TextStyle(color: AppColors.textSecondary)),
                   const SizedBox(height: 8),
-                  Text('${c.$3} 人参与 · 剩余 ${c.$4} 天',
+                  Text('${c.participantCount} 人参与 · 剩余 ${c.daysLeft} 天',
                       style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
                 ],
               ),

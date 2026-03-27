@@ -3,6 +3,7 @@ package com.tongjing.server.repository;
 import com.tongjing.server.entity.Photo;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
@@ -33,6 +34,10 @@ public interface PhotoRepository extends JpaRepository<Photo, Integer>, JpaSpeci
      * <p>方法名：findByUserId</p>
      */
     List<Photo> findByUserId(Integer userId);
+
+    List<Photo> findAllByIdIn(List<Integer> ids);
+
+    List<Photo> findAll(org.springframework.data.jpa.domain.Specification<Photo> spec, Sort sort);
 
     @Query(
             "SELECT p FROM Photo p WHERE p.latitude IS NOT NULL AND p.longitude IS NOT NULL "

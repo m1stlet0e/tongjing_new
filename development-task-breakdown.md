@@ -5,6 +5,19 @@
 - 每个任务含：优先级、负责人建议、完成定义（DoD）。
 - 优先级定义：`P0` 必须，`P1` 重要，`P2` 增强。
 
+## 0.1 当前迭代快照（2026-03-28）
+
+| 项 | 状态 |
+|----|------|
+| Spring：S3 未配置时本地上传 + `GET /api/v1/local-media/**` 直链 | 已完成 |
+| Spring：Flyway 迁移 `shoot_plans` 表 | 已完成 |
+| Spring：`/api/v1/shoot-plans` 列表 / 幂等 PUT / PATCH done / DELETE | 已完成 |
+| Flutter：拍摄计划改走接口（原 SharedPreferences 已移除） | 已完成 |
+| 挑战页后端与真实挑战流 | 未做（仍为占位 UI） |
+| AI 标签/文案真实服务 | 未做（发布页仍为端上辅助） |
+
+**运维提示**：若托管库禁止 Flyway 写 `flyway_schema_history`，可设 `spring.flyway.enabled=false` 并手动执行 `db/migration/V20260328120000__shoot_plans.sql`。真机访问本机图片 URL 时设置 `TONGJING_PUBLIC_BASE_URL`（如 `http://192.168.x.x:9091`）。
+
 ---
 
 ## 1. 前端任务清单（Flutter）

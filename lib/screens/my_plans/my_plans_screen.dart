@@ -8,6 +8,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:tongjing/models/plan_item.dart';
 import 'package:tongjing/providers/auth_provider.dart';
 import 'package:tongjing/services/plan_store.dart';
 import 'package:tongjing/theme/app_colors.dart';
@@ -46,17 +47,36 @@ class _MyPlansScreenState extends State<MyPlansScreen> {
       return;
     }
     setState(() => _loading = true);
-    final plans = await _planStore.list();
-    if (!mounted) return;
-    setState(() {
-      _plans = plans;
-      _loading = false;
-    });
+    try {
+      final plans = await _planStore.list(auth.api);
+      if (!mounted) return;
+      setState(() {
+        _plans = plans;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _plans = [];
+        _loading = false;
+      });
+    }
   }
 
   Future<void> _toggleDone(PlanItem item, bool? value) async {
-    await _planStore.setDone(item.photoId, value == true);
-    await _load();
+    final auth = context.read<AuthNotifier>();
+    final id = item.planId;
+    if (id == null) return;
+    try {
+      await _planStore.setDone(auth.api, id, value == true);
+      await _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('更新失败：$e')),
+        );
+      }
+    }
   }
 
   @override

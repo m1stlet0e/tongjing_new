@@ -155,7 +155,10 @@ GoRouter createAppRouter(AuthNotifier auth) {
       GoRoute(
         path: '/challenges',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) => const ChallengesScreen(),
+        builder: (context, state) {
+          final id = int.tryParse(state.uri.queryParameters['id'] ?? '');
+          return ChallengesScreen(challengeId: id);
+        },
       ),
     ],
   );

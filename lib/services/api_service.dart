@@ -9,7 +9,9 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import 'package:tongjing/config/app_config.dart';
+import 'package:tongjing/models/challenge_models.dart';
 import 'package:tongjing/models/photo_models.dart';
+import 'package:tongjing/models/plan_item.dart';
 import 'package:tongjing/models/user_model.dart';
 
 typedef TokenGetter = String? Function();
@@ -173,13 +175,13 @@ class ApiService {
   String _tabApiValue(String uiTab) {
     switch (uiTab) {
       case 'recommend':
-        return 'hot';
+        return 'recommend';
       case 'latest':
         return 'latest';
       case 'following':
         return 'following';
       default:
-        return 'hot';
+        return 'recommend';
     }
   }
 
@@ -576,5 +578,163 @@ class ApiService {
     if (res.statusCode >= 400 || j['success'] != true) {
       throw ApiException(j['error']?.toString() ?? '添加失败', res.statusCode);
     }
+  }
+
+  // --- 拍摄计划（shoot_plans） ---
+  Future<List<PlanItem>> shootPlansList() async {
+    return _guardNetwork(() async {
+      final res = await http.get(
+        _u('/api/v1/shoot-plans'),
+        headers: _authOnlyHeaders(),
+      );
+      final j = await _decodeJson(res);
+      if (res.statusCode >= 400 || j['success'] != true) {
+        throw ApiException(j['error']?.toString() ?? '计划列表失败', res.statusCode);
+      }
+      final data = j['data'] as Map<String, dynamic>? ?? {};
+      final list = data['plans'] as List<dynamic>? ?? <dynamic>[];
+      return list
+          .map((e) => PlanItem.fromServerJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    });
+  }
+
+  Future<PlanItem> shootPlanUpsert({
+    required int photoId,
+    required String title,
+    required String location,
+    required String imageUrl,
+    required String cameraLine,
+    String? tips,
+    bool? done,
+  }) async {
+    return _guardNetwork(() async {
+      final body = <String, dynamic>{
+        'photo_id': photoId,
+        'title': title,
+        'location': location,
+        'image_url': imageUrl,
+        'camera_line': cameraLine,
+        if (tips != null) 'tips': tips,
+        if (done != null) 'done': done,
+      };
+      final res = await http.put(
+        _u('/api/v1/shoot-plans'),
+        headers: _jsonHeaders(),
+        body: jsonEncode(body),
+      );
+      final j = await _decodeJson(res);
+      if (res.statusCode >= 400 || j['success'] != true) {
+        throw ApiException(j['error']?.toString() ?? '保存计划失败', res.statusCode);
+      }
+      return PlanItem.fromServerJson(Map<String, dynamic>.from(j['data'] as Map));
+    });
+  }
+
+  Future<void> shootPlanPatchDone(int planId, bool done) async {
+    return _guardNetwork(() async {
+      final res = await http.patch(
+        _u('/api/v1/shoot-plans/$planId'),
+        headers: _jsonHeaders(),
+        body: jsonEncode({'done': done}),
+      );
+      final j = await _decodeJson(res);
+      if (res.statusCode >= 400 || j['success'] != true) {
+        throw ApiException(j['error']?.toString() ?? '更新计划失败', res.statusCode);
+      }
+    });
+  }
+
+  Future<void> shootPlanDelete(int planId) async {
+    return _guardNetwork(() async {
+      final res = await http.delete(
+        _u('/api/v1/shoot-plans/$planId'),
+        headers: _jsonHeaders(),
+      );
+      final j = await _decodeJson(res);
+      if (res.statusCode >= 400 || j['success'] != true) {
+        throw ApiException(j['error']?.toString() ?? '删除计划失败', res.statusCode);
+      }
+    });
+  }
+
+  // --- 挑战 ---
+  Future<List<ChallengeItem>> challengesList() async {
+    return _guardNetwork(() async {
+      final res = await http.get(
+        _u('/api/v1/challenges'),
+        headers: _jsonHeaders(auth: _tokenGetter() != null),
+      );
+      final j = await _decodeJson(res);
+      if (res.statusCode >= 400 || j['success'] != true) {
+        throw ApiException(j['error']?.toString() ?? '挑战列表失败', res.statusCode);
+      }
+      final data = j['data'] as Map<String, dynamic>? ?? {};
+      final raw = data['challenges'] as List<dynamic>? ?? <dynamic>[];
+      return raw
+          .map((e) => ChallengeItem.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    });
+  }
+
+  Future<ChallengeItem> challengeDetail(int challengeId) async {
+    return _guardNetwork(() async {
+      final res = await http.get(
+        _u('/api/v1/challenges/$challengeId'),
+        headers: _jsonHeaders(auth: _tokenGetter() != null),
+      );
+      final j = await _decodeJson(res);
+      if (res.statusCode >= 400 || j['success'] != true) {
+        throw ApiException(j['error']?.toString() ?? '挑战详情失败', res.statusCode);
+      }
+      return ChallengeItem.fromJson(Map<String, dynamic>.from(j['data'] as Map));
+    });
+  }
+
+  Future<void> challengeJoin(int challengeId, {int? photoId}) async {
+    return _guardNetwork(() async {
+      final body = <String, dynamic>{if (photoId != null) 'photo_id': photoId};
+      final res = await http.post(
+        _u('/api/v1/challenges/$challengeId/join'),
+        headers: _jsonHeaders(),
+        body: jsonEncode(body),
+      );
+      final j = await _decodeJson(res);
+      if (res.statusCode >= 400 || j['success'] != true) {
+        throw ApiException(j['error']?.toString() ?? '参与挑战失败', res.statusCode);
+      }
+    });
+  }
+
+  Future<({String copy, List<Map<String, String>> tags})> aiPublishAssist({
+    required String title,
+    String? description,
+    String? locationName,
+    Map<String, dynamic>? exifData,
+  }) async {
+    return _guardNetwork(() async {
+      final body = <String, dynamic>{
+        'title': title,
+        if (description != null) 'description': description,
+        if (locationName != null) 'location_name': locationName,
+        if (exifData != null) 'exif_data': exifData,
+      };
+      final res = await http.post(
+        _u('/api/v1/ai/publish-assist'),
+        headers: _jsonHeaders(),
+        body: jsonEncode(body),
+      );
+      final j = await _decodeJson(res);
+      if (res.statusCode >= 400 || j['success'] != true) {
+        throw ApiException(j['error']?.toString() ?? 'AI 生成失败', res.statusCode);
+      }
+      final data = j['data'] as Map<String, dynamic>? ?? {};
+      final copy = data['copy']?.toString() ?? '';
+      final tagsRaw = data['tags'] as List<dynamic>? ?? <dynamic>[];
+      final tags = tagsRaw
+          .map((e) => Map<String, String>.from(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      return (copy: copy, tags: tags);
+    });
   }
 }
