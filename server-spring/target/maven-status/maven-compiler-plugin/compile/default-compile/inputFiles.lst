@@ -1,5 +1,6 @@
 /Users/wangbo/StudioProjects/tongjing/server-spring/src/main/java/com/tongjing/server/TongjingServerApplication.java
 /Users/wangbo/StudioProjects/tongjing/server-spring/src/main/java/com/tongjing/server/config/AppBeansConfig.java
+/Users/wangbo/StudioProjects/tongjing/server-spring/src/main/java/com/tongjing/server/config/DemoDataSeedRunner.java
 /Users/wangbo/StudioProjects/tongjing/server-spring/src/main/java/com/tongjing/server/config/S3Properties.java
 /Users/wangbo/StudioProjects/tongjing/server-spring/src/main/java/com/tongjing/server/config/WebConfig.java
 /Users/wangbo/StudioProjects/tongjing/server-spring/src/main/java/com/tongjing/server/entity/Equipment.java

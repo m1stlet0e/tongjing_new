@@ -9,8 +9,10 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:tongjing/config/app_config.dart';
 import 'package:tongjing/models/photo_models.dart';
 import 'package:tongjing/providers/auth_provider.dart';
+import 'package:tongjing/services/api_service.dart';
 import 'package:tongjing/theme/app_colors.dart';
 
 /// `HomeScreen`：页面组件，负责构建界面布局并响应用户操作。
@@ -28,6 +30,7 @@ class HomeScreen extends StatefulWidget {
 /// 主要用于统一该模块的核心能力与数据结构边界。
 class _HomeScreenState extends State<HomeScreen> {
   final List<PhotoListItem> _photos = [];
+  final _search = TextEditingController();
   int _page = 1;
   bool _loading = true;
   bool _loadingMore = false;
@@ -36,10 +39,19 @@ class _HomeScreenState extends State<HomeScreen> {
   String _uiTab = 'recommend';
 
   String? _brandFilter;
+  String? _lensFilter;
   String? _sceneFilter;
+  String? _apertureFilter;
 
   static const _brands = ['Sony', 'Canon', 'Nikon', '富士', 'Leica'];
+  static const _lens = ['35mm', '50mm', '85mm', '24-70', '70-200'];
   static const _scenes = ['人像', '风光', '街拍', '建筑', '星空', '夜景'];
+  static const _apertures = ['<=2.8', '2.8-5.6', '>=5.6'];
+  static const _mockImage =
+      'https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?auto=format&fit=crop&w=1200&q=80';
+
+  /// 首页单次拉取条数（真实接口与分页判断一致）
+  static const int _feedPageLimit = 32;
 
   @override
   /// 组件初始化阶段执行一次，用于准备首屏数据与监听器。
@@ -48,6 +60,12 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _refresh();
+  }
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
   }
 
   Future<void> _refresh() async {
@@ -61,6 +79,19 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadPage({bool refresh = false}) async {
+    if (AppConfig.useMockData) {
+      setState(() {
+        _photos
+          ..clear()
+          ..addAll(_mockPhotos());
+        _loading = false;
+        _loadingMore = false;
+        _hasMore = false;
+        _error = null;
+      });
+      return;
+    }
+
     final auth = context.read<AuthNotifier>();
     if (_loadingMore && !refresh) return;
     if (!_hasMore && !refresh) return;
@@ -71,9 +102,10 @@ class _HomeScreenState extends State<HomeScreen> {
       final page = refresh ? 1 : _page;
       final r = await auth.api.photosFeed(
         page: page,
-        limit: 20,
+        limit: _feedPageLimit,
         uiTab: _uiTab,
         camera: _brandFilter,
+        lens: _lensFilter,
         scene: _sceneFilter,
       );
       setState(() {
@@ -86,11 +118,24 @@ class _HomeScreenState extends State<HomeScreen> {
           _photos.addAll(r.photos);
           _page = page + 1;
         }
-        _hasMore = r.photos.length >= 20;
+        _hasMore = r.photos.length >= _feedPageLimit;
         _error = null;
       });
+      final keyword = _search.text.trim().toLowerCase();
+      if (keyword.isNotEmpty) {
+        setState(() {
+          _photos.retainWhere(
+            (p) =>
+                (p.title ?? '').toLowerCase().contains(keyword) ||
+                (p.locationName ?? '').toLowerCase().contains(keyword) ||
+                (p.cameraModel ?? '').toLowerCase().contains(keyword),
+          );
+        });
+      }
     } catch (e) {
-      setState(() => _error = e.toString());
+      setState(() {
+        _error = e is ApiException ? e.message : '加载失败，请检查网络与后端服务';
+      });
     } finally {
       setState(() {
         _loading = false;
@@ -108,7 +153,9 @@ class _HomeScreenState extends State<HomeScreen> {
       isScrollControlled: true,
       builder: (ctx) {
         String? b = _brandFilter;
+        String? l = _lensFilter;
         String? s = _sceneFilter;
+        String? a = _apertureFilter;
         return StatefulBuilder(
           builder: (context, setModal) {
             return Padding(
@@ -143,6 +190,27 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
                   const SizedBox(height: 12),
+                  const Text('镜头关键词',
+                      style:
+                          TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      ChoiceChip(
+                        label: const Text('全部'),
+                        selected: l == null,
+                        onSelected: (_) => setModal(() => l = null),
+                      ),
+                      ..._lens.map(
+                        (e) => ChoiceChip(
+                          label: Text(e),
+                          selected: l == e,
+                          onSelected: (_) => setModal(() => l = e),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
                   const Text('题材',
                       style:
                           TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
@@ -163,6 +231,27 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 12),
+                  const Text('光圈区间',
+                      style:
+                          TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      ChoiceChip(
+                        label: const Text('全部'),
+                        selected: a == null,
+                        onSelected: (_) => setModal(() => a = null),
+                      ),
+                      ..._apertures.map(
+                        (e) => ChoiceChip(
+                          label: Text(e),
+                          selected: a == e,
+                          onSelected: (_) => setModal(() => a = e),
+                        ),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 20),
                   SizedBox(
                     width: double.infinity,
@@ -170,7 +259,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       onPressed: () {
                         setState(() {
                           _brandFilter = b;
+                          _lensFilter = l;
                           _sceneFilter = s;
+                          _apertureFilter = a;
                         });
                         Navigator.pop(ctx);
                         _refresh();
@@ -203,20 +294,45 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: Row(
+              child: Column(
                 children: [
-                  const Text(
-                    '同镜',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.kleinBlue,
-                    ),
+                  Row(
+                    children: [
+                      const Text(
+                        '同镜',
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.kleinBlue,
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        onPressed: _openFilter,
+                        icon: const Icon(
+                          Icons.tune,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
                   ),
-                  const Spacer(),
-                  IconButton(
-                    onPressed: _openFilter,
-                    icon: const Icon(Icons.tune, color: AppColors.textSecondary),
+                  TextField(
+                    controller: _search,
+                    onSubmitted: (_) => _refresh(),
+                    decoration: InputDecoration(
+                      hintText: '搜索作品/机位/标签',
+                      prefixIcon: const Icon(Icons.search),
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: AppColors.borderLight),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: AppColors.borderLight),
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -280,6 +396,7 @@ class _HomeScreenState extends State<HomeScreen> {
   ///
   /// 方法：`_buildBody`。
   Widget _buildBody() {
+    final shown = _applyApertureFilter(_photos);
     if (_loading && _photos.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -292,11 +409,28 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       );
     }
-    if (_photos.isEmpty) {
+    if (shown.isEmpty) {
+      if (_photos.isNotEmpty) {
+        return ListView(
+          children: const [
+            SizedBox(height: 120),
+            Center(child: Text('暂无符合筛选的作品')),
+          ],
+        );
+      }
       return ListView(
-        children: const [
-          SizedBox(height: 120),
-          Center(child: Text('暂无作品')),
+        children: [
+          const SizedBox(height: 120),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 24),
+            child: Center(
+              child: Text(
+                '暂无作品。数据库为空时重启后端会自动写入演示数据；也可登录后在「发布」上传。',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+          TextButton(onPressed: _refresh, child: const Text('刷新')),
         ],
       );
     }
@@ -322,22 +456,224 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
-                  if (index >= _photos.length) {
+                  if (index >= shown.length) {
                     return const Center(child: CircularProgressIndicator());
                   }
-                  final p = _photos[index];
+                  final p = shown[index];
                   return _PhotoTile(
                     item: p,
                     onTap: () => context.push('/photo/${p.id}'),
                   );
                 },
-                childCount: _photos.length + (_loadingMore ? 1 : 0),
+                childCount: shown.length + (_loadingMore ? 1 : 0),
               ),
             ),
           ),
         ],
       ),
     );
+  }
+
+  List<PhotoListItem> _applyApertureFilter(List<PhotoListItem> input) {
+    final f = _apertureFilter;
+    if (f == null) return input;
+    return input.where((p) {
+      final value = _parseAperture(p.aperture);
+      if (value == null) return false;
+      if (f == '<=2.8') return value <= 2.8;
+      if (f == '2.8-5.6') return value > 2.8 && value <= 5.6;
+      if (f == '>=5.6') return value >= 5.6;
+      return true;
+    }).toList();
+  }
+
+  double? _parseAperture(String? text) {
+    if (text == null || text.isEmpty) return null;
+    final cleaned = text.replaceAll(RegExp(r'[^0-9.]'), '');
+    return double.tryParse(cleaned);
+  }
+
+  List<PhotoListItem> _mockPhotos() {
+    final tabTitle = switch (_uiTab) {
+      'latest' => '最新',
+      'following' => '关注',
+      _ => '推荐',
+    };
+    return [
+      PhotoListItem(
+        id: 90001,
+        imageUrl: _mockImage,
+        title: '$tabTitle · 外滩蓝调时刻',
+        locationName: '上海外滩观景台',
+        cameraModel: 'Sony A7M4',
+        focalLength: '50mm',
+        aperture: '1.8',
+        shutterSpeed: '1/125',
+        iso: 320,
+        likesCount: 128,
+        latitude: 31.2400,
+        longitude: 121.4900,
+      ),
+      PhotoListItem(
+        id: 90002,
+        imageUrl:
+            'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1200&q=80',
+        title: '$tabTitle · 城市夜景长曝光',
+        locationName: '陆家嘴滨江',
+        cameraModel: 'Canon R6',
+        focalLength: '24-70mm',
+        aperture: '8',
+        shutterSpeed: '4s',
+        iso: 100,
+        likesCount: 96,
+        latitude: 31.2350,
+        longitude: 121.5070,
+      ),
+      PhotoListItem(
+        id: 90003,
+        imageUrl:
+            'https://images.unsplash.com/photo-1482192596544-9eb780fc7f66?auto=format&fit=crop&w=1200&q=80',
+        title: '$tabTitle · 武康大楼街拍',
+        locationName: '武康路',
+        cameraModel: 'Fujifilm X-T5',
+        focalLength: '35mm',
+        aperture: '2.0',
+        shutterSpeed: '1/250',
+        iso: 200,
+        likesCount: 73,
+        latitude: 31.2044,
+        longitude: 121.4338,
+      ),
+      PhotoListItem(
+        id: 90004,
+        imageUrl:
+            'https://images.unsplash.com/photo-1446776877081-d282a0f896e2?auto=format&fit=crop&w=1200&q=80',
+        title: '$tabTitle · 星轨练习',
+        locationName: '崇明郊外',
+        cameraModel: 'Nikon Z6',
+        focalLength: '20mm',
+        aperture: '2.8',
+        shutterSpeed: '20s',
+        iso: 1600,
+        likesCount: 54,
+        latitude: 31.6230,
+        longitude: 121.3970,
+      ),
+      PhotoListItem(
+        id: 90005,
+        imageUrl:
+            'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=1200&q=80',
+        title: '$tabTitle · 雪山日出',
+        locationName: '川西垭口',
+        cameraModel: 'Sony A7R5',
+        focalLength: '70-200mm',
+        aperture: '5.6',
+        shutterSpeed: '1/500',
+        iso: 400,
+        likesCount: 210,
+        username: '山行客',
+        latitude: 30.8,
+        longitude: 102.0,
+      ),
+      PhotoListItem(
+        id: 90006,
+        imageUrl:
+            'https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=1200&q=80',
+        title: '$tabTitle · 极简雪山',
+        locationName: '阿尔卑斯风格参考',
+        cameraModel: 'Leica Q3',
+        focalLength: '28mm',
+        aperture: '2.8',
+        shutterSpeed: '1/2000',
+        iso: 100,
+        likesCount: 178,
+        username: '极简派',
+      ),
+      PhotoListItem(
+        id: 90007,
+        imageUrl:
+            'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80',
+        title: '$tabTitle · 森林晨雾',
+        locationName: '天目山古道',
+        cameraModel: 'Canon R5',
+        focalLength: '85mm',
+        aperture: '1.4',
+        shutterSpeed: '1/160',
+        iso: 640,
+        likesCount: 92,
+        username: '雾行者',
+      ),
+      PhotoListItem(
+        id: 90008,
+        imageUrl:
+            'https://images.unsplash.com/photo-1493246507139-91e8fad9978e?auto=format&fit=crop&w=1200&q=80',
+        title: '$tabTitle · 湖畔倒影',
+        locationName: '千岛湖',
+        cameraModel: 'Nikon Z8',
+        focalLength: '24mm',
+        aperture: '11',
+        shutterSpeed: '1/60',
+        iso: 100,
+        likesCount: 145,
+        username: '静水',
+      ),
+      PhotoListItem(
+        id: 90009,
+        imageUrl:
+            'https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=1200&q=80',
+        title: '$tabTitle · 公路尽头',
+        locationName: '青海公路',
+        cameraModel: 'Fujifilm GFX',
+        focalLength: '45mm',
+        aperture: '8',
+        shutterSpeed: '1/250',
+        iso: 200,
+        likesCount: 167,
+        username: 'RoadTrip',
+      ),
+      PhotoListItem(
+        id: 90010,
+        imageUrl:
+            'https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?auto=format&fit=crop&w=1200&q=80',
+        title: '$tabTitle · 云海层峦',
+        locationName: '黄山',
+        cameraModel: 'Sony A7M4',
+        focalLength: '70mm',
+        aperture: '4',
+        shutterSpeed: '1/320',
+        iso: 250,
+        likesCount: 301,
+        username: '云上',
+      ),
+      PhotoListItem(
+        id: 90011,
+        imageUrl:
+            'https://images.unsplash.com/photo-1518837695005-2083093ee35b?auto=format&fit=crop&w=1200&q=80',
+        title: '$tabTitle · 赛博霓虹',
+        locationName: '涩谷风格参考',
+        cameraModel: 'Sony A7C',
+        focalLength: '35mm',
+        aperture: '1.8',
+        shutterSpeed: '1/80',
+        iso: 800,
+        likesCount: 412,
+        username: 'NeonLab',
+      ),
+      PhotoListItem(
+        id: 90012,
+        imageUrl:
+            'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=1200&q=80',
+        title: '$tabTitle · 人像自然光',
+        locationName: '工作室窗光',
+        cameraModel: 'Canon R6',
+        focalLength: '50mm',
+        aperture: '1.4',
+        shutterSpeed: '1/200',
+        iso: 200,
+        likesCount: 88,
+        username: '肖像师',
+      ),
+    ];
   }
 }
 
@@ -389,6 +725,18 @@ class _PhotoTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
+                    item.username == null || item.username!.isEmpty
+                        ? '@匿名作者'
+                        : '@${item.username}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
                     _cameraLine(item),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -405,6 +753,14 @@ class _PhotoTile extends StatelessWidget {
                       Text(' ${item.likesCount}',
                           style: const TextStyle(
                               fontSize: 11, color: AppColors.textMuted)),
+                      const Spacer(),
+                      Text(
+                        _distanceTag(item),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -429,4 +785,7 @@ class _PhotoTile extends StatelessWidget {
     }
     return parts.isEmpty ? '参数待补充' : parts.join(' | ');
   }
+
+  String _distanceTag(PhotoListItem p) => '距你 ${(p.id % 35) + 1}km';
+
 }

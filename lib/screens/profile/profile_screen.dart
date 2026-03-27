@@ -32,6 +32,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   UserModel? _profile;
   List<PhotoListItem> _photos = [];
   bool _loading = true;
+  int _contentTab = 0;
 
   @override
   /// 组件初始化阶段执行一次，用于准备首屏数据与监听器。
@@ -48,7 +49,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() => _loading = true);
     try {
       final me = await auth.api.usersMe();
-      final my = await auth.api.photosMy(limit: 20);
+      final my = await auth.api.photosMy(limit: 60);
       setState(() {
         _profile = me;
         _photos = my.photos;
@@ -124,8 +125,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
 
     final u = _profile ?? auth.user!;
-    final avatar = u.avatarUrl ??
-        'https://ui-avatars.com/api/?name=${Uri.encodeComponent(u.username)}&background=002FA7&color=fff';
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -141,38 +140,87 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   padding: const EdgeInsets.all(16),
                   child: Column(
                     children: [
-                      Row(
-                        children: [
-                          IconButton(
-                            onPressed: () => context.push('/settings'),
-                            icon: const Icon(Icons.settings_outlined),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.fromLTRB(14, 12, 14, 16),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF0E2A7B), AppColors.kleinBlue],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
                           ),
-                          const Spacer(),
-                          IconButton(
-                            onPressed: _logout,
-                            icon: const Icon(Icons.logout),
-                          ),
-                        ],
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                IconButton(
+                                  onPressed: () => context.push('/settings'),
+                                  icon: const Icon(
+                                    Icons.settings_outlined,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const Spacer(),
+                                IconButton(
+                                  onPressed: _logout,
+                                  icon: const Icon(
+                                    Icons.logout,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            _ProfileAvatar(user: u),
+                            const SizedBox(height: 12),
+                            Text(
+                              u.username,
+                              style: const TextStyle(
+                                fontSize: 20,
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              u.bio ?? '还没有个人简介',
+                              style: const TextStyle(color: Color(0xFFDDE3F6)),
+                            ),
+                            const SizedBox(height: 16),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                              children: [
+                                _stat('获赞', u.photosCount ?? _photos.length, light: true),
+                                _stat('粉丝', u.followersCount ?? 0, light: true),
+                                _stat('关注', u.followingCount ?? 0, light: true),
+                                _stat('机位', (_photos.length * 1.2).toInt(), light: true),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
-                      CircleAvatar(
-                        radius: 44,
-                        backgroundImage: CachedNetworkImageProvider(avatar),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(u.username, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 4),
-                      Text(u.bio ?? '还没有个人简介',
-                          style: const TextStyle(color: AppColors.textSecondary)),
                       const SizedBox(height: 16),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          _stat('作品', u.photosCount ?? _photos.length),
-                          _stat('粉丝', u.followersCount ?? 0),
-                          _stat('关注', u.followingCount ?? 0),
-                        ],
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          '我的防潮箱',
+                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+                        ),
                       ),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        height: 96,
+                        child: ListView(
+                          scrollDirection: Axis.horizontal,
+                          children: const [
+                            _GearCard(title: 'Sony A7R5', type: '机身'),
+                            _GearCard(title: 'FE 16-35mm', type: '镜头'),
+                            _GearCard(title: 'FE 50mm F1.4', type: '镜头'),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
                       Row(
                         children: [
                           Expanded(child: _action(Icons.favorite_border, '收藏', () => context.push('/favorites'))),
@@ -185,15 +233,54 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text('我的作品', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
-                          TextButton(onPressed: () => context.push('/my-works'), child: const Text('查看全部')),
+                          const Text('我的内容', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+                          TextButton(onPressed: () => context.push('/my-works'), child: const Text('查看更多')),
+                        ],
+                      ),
+                      Row(
+                        children: [
+                          Expanded(child: _contentChip('作品', 0)),
+                          Expanded(child: _contentChip('足迹', 1)),
+                          Expanded(child: _contentChip('收藏', 2)),
                         ],
                       ),
                     ],
                   ),
                 ),
               ),
-              if (_photos.isEmpty)
+              if (_contentTab == 1)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Container(
+                      height: 180,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.borderLight),
+                      ),
+                      child: const Center(
+                        child: Text('足迹地图（即将接入真实点亮数据）'),
+                      ),
+                    ),
+                  ),
+                )
+              else if (_contentTab == 2)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Container(
+                      height: 180,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.borderLight),
+                      ),
+                      child: const Center(child: Text('收藏灵感文件夹（开发中）')),
+                    ),
+                  ),
+                )
+              else if (_photos.isEmpty)
                 const SliverToBoxAdapter(
                   child: Padding(
                     padding: EdgeInsets.all(32),
@@ -222,7 +309,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                         );
                       },
-                      childCount: _photos.length > 6 ? 6 : _photos.length,
+                      childCount: _photos.length,
                     ),
                   ),
                 ),
@@ -236,11 +323,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
   /// 执行业务流程并返回该流程的处理结果。
   ///
   /// 方法：`_stat`。
-  Widget _stat(String label, int v) {
+  Widget _stat(String label, int v, {bool light = false}) {
     return Column(
       children: [
-        Text('$v', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-        Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
+        Text(
+          '$v',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: light ? Colors.white : AppColors.textPrimary,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: light ? const Color(0xFFDDE3F6) : AppColors.textMuted,
+          ),
+        ),
       ],
     );
   }
@@ -256,6 +356,134 @@ class _ProfileScreenState extends State<ProfileScreen> {
           Icon(icon, color: AppColors.kleinBlue),
           const SizedBox(height: 4),
           Text(label, style: const TextStyle(fontSize: 11)),
+        ],
+      ),
+    );
+  }
+
+  Widget _contentChip(String label, int i) {
+    final on = _contentTab == i;
+    return InkWell(
+      onTap: () => setState(() => _contentTab = i),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: on ? AppColors.kleinBlue : Colors.transparent,
+              width: 2,
+            ),
+          ),
+        ),
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: on ? AppColors.kleinBlue : AppColors.textMuted,
+            fontWeight: on ? FontWeight.w600 : FontWeight.w400,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 头像：ui-avatars 默认可能返回 SVG，Flutter 无法解码，强制 `format=png`；失败时显示首字。
+class _ProfileAvatar extends StatelessWidget {
+  const _ProfileAvatar({required this.user});
+
+  final UserModel user;
+
+  static String _resolveUrl(UserModel u) {
+    final raw = u.avatarUrl?.trim();
+    if (raw == null || raw.isEmpty) {
+      return 'https://ui-avatars.com/api/?name=${Uri.encodeComponent(u.username)}'
+          '&background=002FA7&color=fff&format=png';
+    }
+    if (raw.contains('ui-avatars.com') && !raw.contains('format=')) {
+      return raw.contains('?') ? '$raw&format=png' : '$raw?format=png';
+    }
+    return raw;
+  }
+
+  static String _initial(String username) {
+    if (username.isEmpty) return '?';
+    return String.fromCharCode(username.runes.first);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final url = _resolveUrl(user);
+    return ClipOval(
+      child: CachedNetworkImage(
+        imageUrl: url,
+        width: 84,
+        height: 84,
+        fit: BoxFit.cover,
+        placeholder: (_, __) => Container(
+          width: 84,
+          height: 84,
+          color: Colors.white24,
+          child: const Center(
+            child: SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+            ),
+          ),
+        ),
+        errorWidget: (_, __, ___) => CircleAvatar(
+          radius: 42,
+          backgroundColor: Colors.white24,
+          child: Text(
+            _initial(user.username),
+            style: const TextStyle(
+              fontSize: 28,
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GearCard extends StatelessWidget {
+  const _GearCard({required this.title, required this.type});
+  final String title;
+  final String type;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 150,
+      margin: const EdgeInsets.only(right: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.borderLight),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            type == '机身' ? Icons.camera_alt : Icons.camera_outlined,
+            color: AppColors.kleinBlue,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            type,
+            style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
+          ),
+          Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
         ],
       ),
     );

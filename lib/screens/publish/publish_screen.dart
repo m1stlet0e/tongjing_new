@@ -11,6 +11,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:tongjing/providers/auth_provider.dart';
 import 'package:tongjing/services/api_service.dart';
+import 'package:tongjing/services/publish_draft_store.dart';
 import 'package:tongjing/theme/app_colors.dart';
 
 /// `PublishScreen`：页面组件，负责构建界面布局并响应用户操作。
@@ -27,6 +28,7 @@ class PublishScreen extends StatefulWidget {
 ///
 /// 主要用于统一该模块的核心能力与数据结构边界。
 class _PublishScreenState extends State<PublishScreen> {
+  final _draftStore = PublishDraftStore();
   final _title = TextEditingController();
   final _caption = TextEditingController();
   final _tips = TextEditingController();
@@ -36,11 +38,24 @@ class _PublishScreenState extends State<PublishScreen> {
   final _tagsInput = TextEditingController();
   final List<Map<String, String>> _selectedTags = [];
   String _tagType = 'scene';
+  String _aiCopyHint = '点击 AI 帮我写，生成拍摄文案建议';
 
   String? _imagePath;
   Map<String, dynamic>? _uploadData;
   bool _busy = false;
   _Step _step = _Step.select;
+  bool _hasLocalDraft = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshDraftFlag());
+  }
+
+  Future<void> _refreshDraftFlag() async {
+    final has = await _draftStore.hasDraft();
+    if (mounted) setState(() => _hasLocalDraft = has);
+  }
 
   @override
   /// 组件销毁前释放资源，避免监听器或控制器泄漏。
@@ -153,6 +168,52 @@ class _PublishScreenState extends State<PublishScreen> {
     setState(() {});
   }
 
+  void _applyAiTagSuggestion() {
+    if (_selectedTags.length >= 12) return;
+    final ex = _exifMap();
+    final suggestions = <String>{};
+    final desc = _caption.text.trim();
+    final title = _title.text.trim();
+    final model = ex?['camera_model']?.toString() ?? '';
+    final lens = ex?['lens_model']?.toString() ?? '';
+
+    if (model.isNotEmpty) {
+      suggestions.add(model.contains('Sony') ? '索尼' : model);
+    }
+    if (lens.isNotEmpty) suggestions.add(lens);
+    if (desc.contains('夜') || title.contains('夜')) suggestions.add('夜景');
+    if (desc.contains('街') || title.contains('街')) suggestions.add('街拍');
+    if (desc.contains('人像') || title.contains('人像')) suggestions.add('人像');
+    if (desc.contains('建筑') || title.contains('建筑')) suggestions.add('建筑');
+    if (desc.contains('星') || title.contains('星')) suggestions.add('星空');
+    if (suggestions.isEmpty) {
+      suggestions.addAll(['旅行', '城市', '光影']);
+    }
+
+    for (final name in suggestions) {
+      if (_selectedTags.length >= 12) break;
+      final exists = _selectedTags.any((e) => e['name'] == name);
+      if (exists) continue;
+      _selectedTags.add({'name': name, 'type': 'scene'});
+    }
+    setState(() {});
+  }
+
+  void _applyAiCopySuggestion() {
+    final ex = _exifMap();
+    final location = _location.text.trim().isEmpty ? '未知机位' : _location.text.trim();
+    final camera = ex?['camera_model']?.toString() ?? '相机';
+    final lens = ex?['lens_model']?.toString() ?? '镜头';
+    final sample =
+        '今天在$location尝试了这组画面。使用$camera 搭配$lens，'
+        '通过控制曝光节奏把现场氛围完整保留下来。建议在光线过渡时段到达机位，'
+        '先观察主体与背景层次，再决定构图与快门策略。';
+    setState(() {
+      _caption.text = sample;
+      _aiCopyHint = 'AI 文案已生成，可继续手动修改';
+    });
+  }
+
   Future<void> _publish() async {
     if (_uploadData == null) return;
     final title = _title.text.trim();
@@ -191,8 +252,12 @@ class _PublishScreenState extends State<PublishScreen> {
               },
         tags: _selectedTags,
       );
+      await _draftStore.clear();
       if (!mounted) return;
-      setState(() => _step = _Step.success);
+      setState(() {
+        _hasLocalDraft = false;
+        _step = _Step.success;
+      });
     } on ApiException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
@@ -219,6 +284,78 @@ class _PublishScreenState extends State<PublishScreen> {
       _selectedTags.clear();
       _step = _Step.select;
     });
+  }
+
+  Future<void> _restoreDraft() async {
+    final d = await _draftStore.load();
+    if (d == null || !mounted) return;
+    final url = d['image_url']?.toString();
+    if (url == null || url.isEmpty) return;
+    final rawExif = d['exif_data'];
+    Map<String, dynamic>? exifMap;
+    if (rawExif is Map) {
+      exifMap = Map<String, dynamic>.from(rawExif);
+    }
+    setState(() {
+      _uploadData = {'url': url, 'exif': exifMap};
+      _title.text = d['title']?.toString() ?? '';
+      _caption.text = d['caption']?.toString() ?? '';
+      _tips.text = d['tips']?.toString() ?? '';
+      _location.text = d['location']?.toString() ?? '';
+      _lat.text = d['lat']?.toString() ?? '';
+      _lng.text = d['lng']?.toString() ?? '';
+      _tagType = d['tag_type']?.toString() ?? 'scene';
+      _selectedTags.clear();
+      final tr = d['tags'];
+      if (tr is List) {
+        for (final e in tr) {
+          if (e is Map) {
+            _selectedTags.add({
+              'name': e['name']?.toString() ?? '',
+              'type': e['type']?.toString() ?? 'scene',
+            });
+          }
+        }
+      }
+      _imagePath = null;
+      _step = _Step.edit;
+    });
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已恢复草稿')));
+    }
+  }
+
+  Future<void> _discardDraft() async {
+    await _draftStore.clear();
+    if (mounted) {
+      setState(() => _hasLocalDraft = false);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已丢弃草稿')));
+    }
+  }
+
+  Future<void> _saveDraft() async {
+    if (_uploadData == null) return;
+    final url = _uploadData!['url']?.toString();
+    if (url == null || url.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请先上传图片后再存草稿')));
+      return;
+    }
+    await _draftStore.save(
+      imageUrl: url,
+      exifData: _exifMap(),
+      title: _title.text,
+      caption: _caption.text,
+      tips: _tips.text,
+      location: _location.text,
+      lat: _lat.text,
+      lng: _lng.text,
+      tagType: _tagType,
+      tags: _selectedTags.map((e) => Map<String, String>.from(e)).toList(),
+    );
+    if (mounted) {
+      setState(() => _hasLocalDraft = true);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('草稿已保存')));
+    }
   }
 
   Widget _buildExifCard() {
@@ -345,6 +482,26 @@ class _PublishScreenState extends State<PublishScreen> {
                     border: OutlineInputBorder(),
                   ),
                 ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: _applyAiCopySuggestion,
+                      icon: const Icon(Icons.auto_awesome_outlined),
+                      label: const Text('AI 帮我写'),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _aiCopyHint,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: _tips,
@@ -430,6 +587,15 @@ class _PublishScreenState extends State<PublishScreen> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: OutlinedButton.icon(
+                    onPressed: _applyAiTagSuggestion,
+                    icon: const Icon(Icons.auto_awesome_outlined),
+                    label: const Text('AI 智能推荐标签'),
+                  ),
+                ),
                 const SizedBox(height: 10),
                 if (_selectedTags.isNotEmpty)
                   Wrap(
@@ -459,6 +625,11 @@ class _PublishScreenState extends State<PublishScreen> {
                   ),
                   child: const Text('确认发布'),
                 ),
+                const SizedBox(height: 10),
+                OutlinedButton(
+                  onPressed: _busy ? null : _saveDraft,
+                  child: const Text('存草稿'),
+                ),
               ],
             ),
           ),
@@ -467,6 +638,47 @@ class _PublishScreenState extends State<PublishScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                if (_hasLocalDraft) ...[
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF4FF),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.borderLight),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Text(
+                          '检测到未发布的草稿（含已上传图片，可继续编辑）',
+                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: FilledButton(
+                                onPressed: _busy ? null : _restoreDraft,
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: AppColors.kleinBlue,
+                                ),
+                                child: const Text('继续编辑'),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: _busy ? null : _discardDraft,
+                                child: const Text('丢弃'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 if (_imagePath != null)
                   Text('已选择图片，点击下方上传', style: TextStyle(color: AppColors.textSecondary)),
                 const SizedBox(height: 16),

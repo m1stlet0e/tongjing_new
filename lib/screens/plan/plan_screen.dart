@@ -151,9 +151,9 @@ class _PlanScreenState extends State<PlanScreen> {
               value: p.done,
               onChanged: (v) => _toggleDone(p, v),
             ),
-            trailing: TextButton(
-              onPressed: () => context.push('/my-plans'),
-              child: const Text('我的计划'),
+            trailing: FilledButton.tonal(
+              onPressed: () => context.go('/map'),
+              child: const Text('去打卡'),
             ),
           ),
         );
@@ -171,10 +171,39 @@ class _PlanScreenState extends State<PlanScreen> {
     ];
     return ListView.separated(
       padding: const EdgeInsets.all(16),
-      itemCount: items.length,
+      itemCount: items.length + 1,
       separatorBuilder: (_, __) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
-        final c = items[index];
+        if (index == 0) {
+          return Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF0E2A7B), AppColors.kleinBlue],
+              ),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '2026 春日微距大赏',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                SizedBox(height: 6),
+                Text(
+                  '上传微距题材作品参与评选，赢取首页推荐位',
+                  style: TextStyle(color: Color(0xFFDDE3F6)),
+                ),
+              ],
+            ),
+          );
+        }
+        final c = items[index - 1];
         return Card(
           clipBehavior: Clip.antiAlias,
           child: InkWell(

@@ -70,35 +70,77 @@ class ApiService {
     }
   }
 
+  static String networkUnreachableMessage() =>
+      '无法连接服务器（${AppConfig.apiBaseUrl}）。请在本机启动 Spring 服务（端口 9091）；真机请使用：flutter run --dart-define=API_BASE_URL=http://<电脑局域网IP>:9091';
+
+  static bool _isNetworkFailure(Object e) {
+    final s = e.toString();
+    return s.contains('SocketException') ||
+        s.contains('Connection refused') ||
+        s.contains('ClientException') ||
+        s.contains('Network is unreachable') ||
+        s.contains('Failed host lookup') ||
+        s.contains('Connection reset');
+  }
+
+  Future<T> _guardNetwork<T>(Future<T> Function() action) async {
+    try {
+      return await action();
+    } catch (e) {
+      if (e is ApiException) rethrow;
+      if (_isNetworkFailure(e)) {
+        throw ApiException(networkUnreachableMessage());
+      }
+      rethrow;
+    }
+  }
+
   // --- Auth ---
   Future<void> authSendCode(String phone, {String type = 'login'}) async {
-    final res = await http.post(
-      _u('/api/v1/auth/send-code'),
-      headers: _jsonHeaders(auth: false),
-      body: jsonEncode({'phone': phone, 'type': type}),
-    );
-    final j = await _decodeJson(res);
-    if (res.statusCode >= 400 || j['success'] != true) {
-      throw ApiException(j['error']?.toString() ?? '发送验证码失败', res.statusCode);
+    try {
+      final res = await http.post(
+        _u('/api/v1/auth/send-code'),
+        headers: _jsonHeaders(auth: false),
+        body: jsonEncode({'phone': phone, 'type': type}),
+      );
+      final j = await _decodeJson(res);
+      if (res.statusCode >= 400 || j['success'] != true) {
+        throw ApiException(j['error']?.toString() ?? '发送验证码失败', res.statusCode);
+      }
+    } catch (e) {
+      if (e is ApiException) rethrow;
+      if (_isNetworkFailure(e)) {
+        throw ApiException(networkUnreachableMessage());
+      }
+      rethrow;
     }
   }
 
   /// 开发环境服务端可能在 JSON 中返回 `_dev_code`
   Future<({UserModel user, String token})> authLoginPhone(
       String phone, String code) async {
-    final res = await http.post(
-      _u('/api/v1/auth/login/phone'),
-      headers: _jsonHeaders(auth: false),
-      body: jsonEncode({'phone': phone, 'code': code}),
-    );
-    final j = await _decodeJson(res);
-    if (res.statusCode >= 400 || j['success'] != true) {
-      throw ApiException(j['error']?.toString() ?? '登录失败', res.statusCode);
+    try {
+      final res = await http.post(
+        _u('/api/v1/auth/login/phone'),
+        headers: _jsonHeaders(auth: false),
+        body: jsonEncode({'phone': phone, 'code': code}),
+      );
+      final j = await _decodeJson(res);
+      if (res.statusCode >= 400 || j['success'] != true) {
+        throw ApiException(j['error']?.toString() ?? '登录失败', res.statusCode);
+      }
+      final data = j['data'] as Map<String, dynamic>;
+      final user =
+          UserModel.fromJson(Map<String, dynamic>.from(data['user'] as Map));
+      final token = data['token'] as String;
+      return (user: user, token: token);
+    } catch (e) {
+      if (e is ApiException) rethrow;
+      if (_isNetworkFailure(e)) {
+        throw ApiException(networkUnreachableMessage());
+      }
+      rethrow;
     }
-    final data = j['data'] as Map<String, dynamic>;
-    final user = UserModel.fromJson(Map<String, dynamic>.from(data['user'] as Map));
-    final token = data['token'] as String;
-    return (user: user, token: token);
   }
 
   Future<void> authLogout() async {
@@ -149,59 +191,63 @@ class ApiService {
     String? lens,
     String? scene,
   }) async {
-    final q = <String, String>{
-      'page': '$page',
-      'limit': '$limit',
-      'tab': _tabApiValue(uiTab),
-    };
-    if (camera != null && camera.isNotEmpty) q['camera'] = camera;
-    if (lens != null && lens.isNotEmpty) q['lens'] = lens;
-    if (scene != null && scene.isNotEmpty) q['scene'] = scene;
+    return _guardNetwork(() async {
+      final q = <String, String>{
+        'page': '$page',
+        'limit': '$limit',
+        'tab': _tabApiValue(uiTab),
+      };
+      if (camera != null && camera.isNotEmpty) q['camera'] = camera;
+      if (lens != null && lens.isNotEmpty) q['lens'] = lens;
+      if (scene != null && scene.isNotEmpty) q['scene'] = scene;
 
-    final res = await http.get(
-      _u('/api/v1/photos', q),
-      headers: _jsonHeaders(auth: _tokenGetter() != null),
-    );
-    final j = await _decodeJson(res);
-    if (res.statusCode >= 400 || j['success'] != true) {
-      throw ApiException(j['error']?.toString() ?? '加载失败', res.statusCode);
-    }
-    final data = j['data'] as Map<String, dynamic>;
-    final list = (data['photos'] as List<dynamic>? ?? [])
-        .map((e) => PhotoListItem.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
-    final p = data['pagination'] as Map<String, dynamic>? ?? {};
-    final pagination = Pagination(
-      page: (p['page'] as num?)?.toInt() ?? page,
-      limit: (p['limit'] as num?)?.toInt() ?? limit,
-      total: (p['total'] as num?)?.toInt() ?? 0,
-    );
-    return (photos: list, pagination: pagination);
+      final res = await http.get(
+        _u('/api/v1/photos', q),
+        headers: _jsonHeaders(auth: _tokenGetter() != null),
+      );
+      final j = await _decodeJson(res);
+      if (res.statusCode >= 400 || j['success'] != true) {
+        throw ApiException(j['error']?.toString() ?? '加载失败', res.statusCode);
+      }
+      final data = j['data'] as Map<String, dynamic>;
+      final list = (data['photos'] as List<dynamic>? ?? [])
+          .map((e) => PhotoListItem.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      final p = data['pagination'] as Map<String, dynamic>? ?? {};
+      final pagination = Pagination(
+        page: (p['page'] as num?)?.toInt() ?? page,
+        limit: (p['limit'] as num?)?.toInt() ?? limit,
+        total: (p['total'] as num?)?.toInt() ?? 0,
+      );
+      return (photos: list, pagination: pagination);
+    });
   }
 
   Future<({List<PhotoListItem> photos, Pagination pagination})> photosMy({
     int page = 1,
     int limit = 20,
   }) async {
-    final res = await http.get(
-      _u('/api/v1/photos/my', {'page': '$page', 'limit': '$limit'}),
-      headers: _authOnlyHeaders(),
-    );
-    final j = await _decodeJson(res);
-    if (res.statusCode >= 400 || j['success'] != true) {
-      throw ApiException(j['error']?.toString() ?? '加载失败', res.statusCode);
-    }
-    final data = j['data'] as Map<String, dynamic>;
-    final list = (data['photos'] as List<dynamic>? ?? [])
-        .map((e) => PhotoListItem.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
-    final p = data['pagination'] as Map<String, dynamic>? ?? {};
-    final pagination = Pagination(
-      page: (p['page'] as num?)?.toInt() ?? page,
-      limit: (p['limit'] as num?)?.toInt() ?? limit,
-      total: (p['total'] as num?)?.toInt() ?? 0,
-    );
-    return (photos: list, pagination: pagination);
+    return _guardNetwork(() async {
+      final res = await http.get(
+        _u('/api/v1/photos/my', {'page': '$page', 'limit': '$limit'}),
+        headers: _authOnlyHeaders(),
+      );
+      final j = await _decodeJson(res);
+      if (res.statusCode >= 400 || j['success'] != true) {
+        throw ApiException(j['error']?.toString() ?? '加载失败', res.statusCode);
+      }
+      final data = j['data'] as Map<String, dynamic>;
+      final list = (data['photos'] as List<dynamic>? ?? [])
+          .map((e) => PhotoListItem.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      final p = data['pagination'] as Map<String, dynamic>? ?? {};
+      final pagination = Pagination(
+        page: (p['page'] as num?)?.toInt() ?? page,
+        limit: (p['limit'] as num?)?.toInt() ?? limit,
+        total: (p['total'] as num?)?.toInt() ?? 0,
+      );
+      return (photos: list, pagination: pagination);
+    });
   }
 
   Future<({List<PhotoListItem> photos, Pagination pagination})>
@@ -209,37 +255,41 @@ class ApiService {
     int page = 1,
     int limit = 20,
   }) async {
-    final res = await http.get(
-      _u('/api/v1/photos/favorites', {'page': '$page', 'limit': '$limit'}),
-      headers: _authOnlyHeaders(),
-    );
-    final j = await _decodeJson(res);
-    if (res.statusCode >= 400 || j['success'] != true) {
-      throw ApiException(j['error']?.toString() ?? '加载失败', res.statusCode);
-    }
-    final data = j['data'] as Map<String, dynamic>;
-    final list = (data['photos'] as List<dynamic>? ?? [])
-        .map((e) => PhotoListItem.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
-    final p = data['pagination'] as Map<String, dynamic>? ?? {};
-    final pagination = Pagination(
-      page: (p['page'] as num?)?.toInt() ?? page,
-      limit: (p['limit'] as num?)?.toInt() ?? limit,
-      total: (p['total'] as num?)?.toInt() ?? 0,
-    );
-    return (photos: list, pagination: pagination);
+    return _guardNetwork(() async {
+      final res = await http.get(
+        _u('/api/v1/photos/favorites', {'page': '$page', 'limit': '$limit'}),
+        headers: _authOnlyHeaders(),
+      );
+      final j = await _decodeJson(res);
+      if (res.statusCode >= 400 || j['success'] != true) {
+        throw ApiException(j['error']?.toString() ?? '加载失败', res.statusCode);
+      }
+      final data = j['data'] as Map<String, dynamic>;
+      final list = (data['photos'] as List<dynamic>? ?? [])
+          .map((e) => PhotoListItem.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      final p = data['pagination'] as Map<String, dynamic>? ?? {};
+      final pagination = Pagination(
+        page: (p['page'] as num?)?.toInt() ?? page,
+        limit: (p['limit'] as num?)?.toInt() ?? limit,
+        total: (p['total'] as num?)?.toInt() ?? 0,
+      );
+      return (photos: list, pagination: pagination);
+    });
   }
 
   Future<PhotoDetail> photoDetail(int id) async {
-    final res = await http.get(
-      _u('/api/v1/photos/$id'),
-      headers: _jsonHeaders(auth: _tokenGetter() != null),
-    );
-    final j = await _decodeJson(res);
-    if (res.statusCode >= 400 || j['success'] != true) {
-      throw ApiException(j['error']?.toString() ?? '加载失败', res.statusCode);
-    }
-    return PhotoDetail.fromJson(Map<String, dynamic>.from(j['data'] as Map));
+    return _guardNetwork(() async {
+      final res = await http.get(
+        _u('/api/v1/photos/$id'),
+        headers: _jsonHeaders(auth: _tokenGetter() != null),
+      );
+      final j = await _decodeJson(res);
+      if (res.statusCode >= 400 || j['success'] != true) {
+        throw ApiException(j['error']?.toString() ?? '加载失败', res.statusCode);
+      }
+      return PhotoDetail.fromJson(Map<String, dynamic>.from(j['data'] as Map));
+    });
   }
 
   Future<void> photoPublish({
@@ -393,34 +443,38 @@ class ApiService {
     required double lng,
     String radiusKm = '50',
   }) async {
-    final res = await http.get(
-      _u('/api/v1/map/photos', {
-        'lat': '$lat',
-        'lng': '$lng',
-        'radius': radiusKm,
-      }),
-      headers: _jsonHeaders(auth: _tokenGetter() != null),
-    );
-    final j = await _decodeJson(res);
-    if (res.statusCode >= 400 || j['success'] != true) {
-      throw ApiException(j['error']?.toString() ?? '地图数据失败', res.statusCode);
-    }
-    final raw = j['data'];
-    if (raw is! List) return [];
-    return raw
-        .map((e) => PhotoListItem.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
+    return _guardNetwork(() async {
+      final res = await http.get(
+        _u('/api/v1/map/photos', {
+          'lat': '$lat',
+          'lng': '$lng',
+          'radius': radiusKm,
+        }),
+        headers: _jsonHeaders(auth: _tokenGetter() != null),
+      );
+      final j = await _decodeJson(res);
+      if (res.statusCode >= 400 || j['success'] != true) {
+        throw ApiException(j['error']?.toString() ?? '地图数据失败', res.statusCode);
+      }
+      final raw = j['data'];
+      if (raw is! List) return <PhotoListItem>[];
+      return raw
+          .map((e) => PhotoListItem.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    });
   }
 
   Future<List<Map<String, dynamic>>> mapPopularSpots() async {
-    final res = await http.get(_u('/api/v1/map/popular-spots'));
-    final j = await _decodeJson(res);
-    if (res.statusCode >= 400 || j['success'] != true) {
-      throw ApiException(j['error']?.toString() ?? '热门机位失败', res.statusCode);
-    }
-    final raw = j['data'];
-    if (raw is! List) return [];
-    return raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    return _guardNetwork(() async {
+      final res = await http.get(_u('/api/v1/map/popular-spots'));
+      final j = await _decodeJson(res);
+      if (res.statusCode >= 400 || j['success'] != true) {
+        throw ApiException(j['error']?.toString() ?? '热门机位失败', res.statusCode);
+      }
+      final raw = j['data'];
+      if (raw is! List) return <Map<String, dynamic>>[];
+      return raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    });
   }
 
   // --- Spots ---

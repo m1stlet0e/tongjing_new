@@ -9,6 +9,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:tongjing/config/app_config.dart';
 import 'package:tongjing/models/photo_models.dart';
 import 'package:tongjing/providers/auth_provider.dart';
 import 'package:tongjing/services/api_service.dart';
@@ -35,16 +36,7 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
   PhotoDetail? _photo;
   bool _loading = true;
   String? _error;
-  final _comment = TextEditingController();
-
-  @override
-  /// 组件销毁前释放资源，避免监听器或控制器泄漏。
-  ///
-  /// 方法：`dispose`。
-  void dispose() {
-    _comment.dispose();
-    super.dispose();
-  }
+  bool _inPlan = false;
 
   @override
   /// 组件初始化阶段执行一次，用于准备首屏数据与监听器。
@@ -57,6 +49,24 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
 
   Future<void> _fetch() async {
     if (widget.photoId <= 0) return;
+    if (AppConfig.useMockData) {
+      setState(() {
+        _loading = false;
+        _error = null;
+        _photo = _buildMockDetail(widget.photoId);
+      });
+      await _syncPlanFlag();
+      return;
+    }
+    if (_isMockId(widget.photoId)) {
+      setState(() {
+        _loading = false;
+        _error = null;
+        _photo = _buildMockDetail(widget.photoId);
+      });
+      await _syncPlanFlag();
+      return;
+    }
     setState(() {
       _loading = true;
       _error = null;
@@ -69,6 +79,131 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
       setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+    await _syncPlanFlag();
+  }
+
+  Future<void> _syncPlanFlag() async {
+    final p = _photo;
+    if (p == null) return;
+    final has = await _planStore.containsPhoto(p.id);
+    if (mounted) setState(() => _inPlan = has);
+  }
+
+  bool _isMockId(int id) => id >= 90000;
+
+  Future<void> _addToPlan() async {
+    final auth = context.read<AuthNotifier>();
+    if (!auth.isAuthenticated) {
+      if (mounted) context.push('/login');
+      return;
+    }
+    final p = _photo;
+    if (p == null) return;
+    await _planStore.upsert(
+      PlanItem(
+        photoId: p.id,
+        title: p.title ?? '未命名拍摄计划',
+        location: p.locationName ?? '未标记机位',
+        imageUrl: p.imageUrl,
+        cameraLine:
+            '${p.cameraModel ?? '-'} | ${p.focalLength ?? '-'} | f/${p.aperture ?? '-'}',
+        tips: p.shootingTips,
+        createdAt: DateTime.now().toIso8601String(),
+      ),
+    );
+    if (!mounted) return;
+    setState(() => _inPlan = true);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('已加入拍摄计划'),
+        action: SnackBarAction(
+          label: '查看',
+          onPressed: () => context.push('/my-plans'),
+        ),
+      ),
+    );
+  }
+
+  PhotoDetail _buildMockDetail(int id) {
+    switch (id) {
+      case 90001:
+      case 99001:
+        return PhotoDetail(
+          id: id,
+          imageUrl:
+              'https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?auto=format&fit=crop&w=1600&q=80',
+          title: '外滩蓝调时刻（Mock）',
+          description: '这是一条本地 Mock 数据，用于演示详情页排版与交互。',
+          locationName: '上海外滩观景台',
+          cameraBrand: 'Sony',
+          cameraModel: 'A7M4',
+          focalLength: '50mm',
+          aperture: '1.8',
+          shutterSpeed: '1/125',
+          iso: 320,
+          username: 'MockCreator',
+          likesCount: 128,
+          favoritesCount: 38,
+          commentsCount: 2,
+          shootingTips: '建议日落后 20 分钟拍摄，保留天空层次。',
+          latitude: 31.2400,
+          longitude: 121.4900,
+          tags: [PhotoTag(name: '夜景', type: 'scene')],
+          comments: [
+            PhotoComment(id: 1, content: '色彩很通透，学习了', username: '用户A'),
+            PhotoComment(id: 2, content: '这个机位太稳了', username: '用户B'),
+          ],
+        );
+      case 90002:
+      case 99002:
+        return PhotoDetail(
+          id: id,
+          imageUrl:
+              'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1600&q=80',
+          title: '城市夜景长曝光（Mock）',
+          description: '使用三脚架和低 ISO 获取干净夜景画面。',
+          locationName: '陆家嘴滨江',
+          cameraBrand: 'Canon',
+          cameraModel: 'R6',
+          focalLength: '24-70mm',
+          aperture: '8',
+          shutterSpeed: '4s',
+          iso: 100,
+          username: 'MockCreator',
+          likesCount: 96,
+          favoritesCount: 24,
+          commentsCount: 1,
+          shootingTips: '车流方向尽量平行于画面，光轨更有引导性。',
+          latitude: 31.2350,
+          longitude: 121.5070,
+          tags: [PhotoTag(name: '长曝光', type: 'style')],
+          comments: [
+            PhotoComment(id: 3, content: '参数很实用', username: '用户C'),
+          ],
+        );
+      default:
+        return PhotoDetail(
+          id: id,
+          imageUrl:
+              'https://images.unsplash.com/photo-1482192596544-9eb780fc7f66?auto=format&fit=crop&w=1600&q=80',
+          title: '机位示例（Mock）',
+          description: '本地模拟详情数据。',
+          locationName: '武康路',
+          cameraBrand: 'Fujifilm',
+          cameraModel: 'X-T5',
+          focalLength: '35mm',
+          aperture: '2.0',
+          shutterSpeed: '1/250',
+          iso: 200,
+          username: 'MockCreator',
+          likesCount: 66,
+          favoritesCount: 12,
+          commentsCount: 0,
+          shootingTips: '避开人流高峰，侧逆光更出层次。',
+          latitude: 31.2044,
+          longitude: 121.4338,
+        );
     }
   }
 
@@ -173,37 +308,16 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
         }
       });
       if (fav && mounted) {
+        setState(() => _inPlan = true);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('已加入拍摄计划'),
+            content: const Text('收藏成功，已同步到拍摄计划'),
             action: SnackBarAction(
               label: '查看',
               onPressed: () => context.push('/my-plans'),
             ),
           ),
         );
-      }
-    } on ApiException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
-      }
-    }
-  }
-
-  Future<void> _sendComment() async {
-    final text = _comment.text.trim();
-    if (text.isEmpty) return;
-    final auth = context.read<AuthNotifier>();
-    if (!auth.isAuthenticated) {
-      context.push('/login');
-      return;
-    }
-    try {
-      await auth.api.photoAddComment(widget.photoId, text);
-      _comment.clear();
-      await _fetch();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已发送')));
       }
     } on ApiException catch (e) {
       if (mounted) {
@@ -225,8 +339,10 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
       ),
     );
     if (ok != true) return;
+    if (!mounted) return;
+    final api = context.read<AuthNotifier>().api;
     try {
-      await context.read<AuthNotifier>().api.photoDelete(widget.photoId);
+      await api.photoDelete(widget.photoId);
     } on ApiException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
@@ -252,114 +368,190 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
               ? Center(child: Text(_error!, style: const TextStyle(color: Colors.white)))
               : _photo == null
                   ? const SizedBox.shrink()
-                  : CustomScrollView(
-                      slivers: [
-                        SliverAppBar(
-                          pinned: true,
-                          backgroundColor: Colors.black,
-                          leading: IconButton(
-                            icon: const Icon(Icons.arrow_back, color: Colors.white),
-                            onPressed: () => context.pop(),
-                          ),
-                          actions: [
-                            if (auth.isAuthenticated &&
-                                auth.user?.id == _photo!.userId)
-                              IconButton(
-                                icon: const Icon(Icons.delete_outline, color: Colors.white70),
-                                onPressed: _delete,
-                              ),
-                          ],
-                        ),
-                        SliverToBoxAdapter(
-                          child: CachedNetworkImage(
-                            imageUrl: _photo!.imageUrl,
-                            fit: BoxFit.contain,
-                            width: double.infinity,
-                          ),
-                        ),
-                        SliverToBoxAdapter(
-                          child: Container(
-                            color: AppColors.background,
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(_photo!.title ?? '未命名',
-                                    style: const TextStyle(
-                                        fontSize: 20, fontWeight: FontWeight.bold)),
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    IconButton(
-                                      onPressed: _like,
-                                      icon: Icon(
-                                        _photo!.isLiked ? Icons.favorite : Icons.favorite_border,
-                                        color: _photo!.isLiked ? Colors.red : null,
-                                      ),
-                                    ),
-                                    Text('${_photo!.likesCount}'),
-                                    const SizedBox(width: 16),
-                                    IconButton(
-                                      onPressed: _favorite,
-                                      icon: Icon(
-                                        _photo!.isFavorited ? Icons.star : Icons.star_border,
-                                        color: _photo!.isFavorited ? AppColors.champagneGold : null,
-                                      ),
-                                    ),
-                                    Text('${_photo!.favoritesCount}'),
-                                  ],
-                                ),
-                                if (_photo!.locationName != null)
-                                  Text('地点：${_photo!.locationName}',
-                                      style: const TextStyle(color: AppColors.textSecondary)),
-                                const SizedBox(height: 8),
-                                Text(
-                                  '参数：${_photo!.cameraBrand ?? ''} ${_photo!.cameraModel ?? ''} '
-                                  '${_photo!.focalLength ?? ''} ${_photo!.aperture ?? ''} '
-                                  '${_photo!.shutterSpeed ?? ''} ISO${_photo!.iso ?? '-'}',
-                                  style: const TextStyle(fontSize: 13),
-                                ),
-                                if (_photo!.description != null &&
-                                    _photo!.description!.isNotEmpty) ...[
-                                  const SizedBox(height: 12),
-                                  Text(_photo!.description!),
-                                ],
-                                if (_photo!.shootingTips != null &&
-                                    _photo!.shootingTips!.isNotEmpty) ...[
-                                  const SizedBox(height: 12),
-                                  Text('拍摄建议：${_photo!.shootingTips}'),
-                                ],
-                                const SizedBox(height: 16),
-                                const Text('评论', style: TextStyle(fontWeight: FontWeight.w600)),
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: TextField(
-                                        controller: _comment,
-                                        decoration: const InputDecoration(
-                                          hintText: '写评论...',
-                                          filled: true,
-                                          fillColor: Colors.white,
-                                        ),
-                                      ),
-                                    ),
-                                    IconButton(
-                                      onPressed: _sendComment,
-                                      icon: const Icon(Icons.send, color: AppColors.kleinBlue),
-                                    ),
-                                  ],
-                                ),
-                                ..._photo!.comments.map(
-                                  (c) => ListTile(
-                                    dense: true,
-                                    title: Text(c.username ?? '用户'),
-                                    subtitle: Text(c.content),
-                                  ),
-                                ),
-                              ],
+                  : Stack(
+                      children: [
+                        Positioned.fill(
+                          child: InteractiveViewer(
+                            minScale: 1,
+                            maxScale: 4,
+                            child: CachedNetworkImage(
+                              imageUrl: _photo!.imageUrl,
+                              fit: BoxFit.contain,
+                              width: double.infinity,
+                              height: double.infinity,
                             ),
                           ),
+                        ),
+                        Positioned(
+                          top: MediaQuery.of(context).padding.top + 8,
+                          left: 8,
+                          right: 8,
+                          child: Row(
+                            children: [
+                              IconButton(
+                                style: IconButton.styleFrom(
+                                  backgroundColor: const Color(0x66000000),
+                                ),
+                                icon: const Icon(Icons.arrow_back, color: Colors.white),
+                                onPressed: () => context.pop(),
+                              ),
+                              const Spacer(),
+                              if (auth.isAuthenticated && auth.user?.id == _photo!.userId)
+                                IconButton(
+                                  style: IconButton.styleFrom(
+                                    backgroundColor: const Color(0x66000000),
+                                  ),
+                                  icon: const Icon(Icons.delete_outline, color: Colors.white),
+                                  onPressed: _delete,
+                                ),
+                            ],
+                          ),
+                        ),
+                        DraggableScrollableSheet(
+                          initialChildSize: 0.2,
+                          minChildSize: 0.14,
+                          maxChildSize: 0.72,
+                          builder: (context, controller) {
+                            return Container(
+                              decoration: const BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+                              ),
+                              child: ListView(
+                                controller: controller,
+                                padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
+                                children: [
+                                  Center(
+                                    child: Container(
+                                      width: 44,
+                                      height: 5,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFD7D7D7),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    _photo!.title ?? '未命名',
+                                    style: const TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    '作者：${_photo!.username ?? '匿名作者'}',
+                                    style: const TextStyle(color: AppColors.textSecondary),
+                                  ),
+                                  if (_photo!.description != null &&
+                                      _photo!.description!.isNotEmpty) ...[
+                                    const SizedBox(height: 10),
+                                    Text(_photo!.description!),
+                                  ],
+                                  const SizedBox(height: 14),
+                                  Row(
+                                    children: [
+                                      IconButton(
+                                        onPressed: _like,
+                                        icon: Icon(
+                                          _photo!.isLiked ? Icons.favorite : Icons.favorite_border,
+                                          color: _photo!.isLiked ? Colors.red : null,
+                                        ),
+                                      ),
+                                      Text('${_photo!.likesCount}'),
+                                      const SizedBox(width: 16),
+                                      IconButton(
+                                        onPressed: _favorite,
+                                        icon: Icon(
+                                          _photo!.isFavorited ? Icons.star : Icons.star_border,
+                                          color: _photo!.isFavorited
+                                              ? AppColors.champagneGold
+                                              : null,
+                                        ),
+                                      ),
+                                      Text('${_photo!.favoritesCount}'),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+                                  if (_inPlan)
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: OutlinedButton.icon(
+                                        onPressed: () => context.push('/my-plans'),
+                                        icon: const Icon(Icons.check_circle_outline),
+                                        label: const Text('已在拍摄计划中'),
+                                      ),
+                                    )
+                                  else
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: FilledButton.icon(
+                                        style: FilledButton.styleFrom(
+                                          backgroundColor: AppColors.kleinBlue,
+                                          padding: const EdgeInsets.symmetric(vertical: 14),
+                                        ),
+                                        onPressed: _addToPlan,
+                                        icon: const Icon(Icons.add_task),
+                                        label: const Text('加入拍摄计划'),
+                                      ),
+                                    ),
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF8F9FB),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          '参数信息',
+                                          style: TextStyle(fontWeight: FontWeight.w600),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          '${_photo!.cameraBrand ?? ''} ${_photo!.cameraModel ?? ''}',
+                                        ),
+                                        Text(
+                                          '${_photo!.focalLength ?? '-'} | f/${_photo!.aperture ?? '-'} | ${_photo!.shutterSpeed ?? '-'} | ISO ${_photo!.iso ?? '-'}',
+                                        ),
+                                        if (_photo!.locationName != null &&
+                                            _photo!.locationName!.isNotEmpty)
+                                          Text('机位：${_photo!.locationName}'),
+                                      ],
+                                    ),
+                                  ),
+                                  if (_photo!.shootingTips != null &&
+                                      _photo!.shootingTips!.isNotEmpty) ...[
+                                    const SizedBox(height: 12),
+                                    Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFEFF4FF),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          const Text(
+                                            '拍摄 Tips',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                              color: AppColors.kleinBlue,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Text(_photo!.shootingTips!),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            );
+                          },
                         ),
                       ],
                     ),

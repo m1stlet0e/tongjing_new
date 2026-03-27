@@ -63,7 +63,7 @@ public class UserService {
         }
         u.setUpdatedAt(java.time.Instant.now());
         u = userRepository.save(u);
-        return Map.of("success", true, "data", u, "message", "更新成功");
+        return Map.of("success", true, "data", enrichUserStats(u), "message", "更新成功");
     }
 
     /**

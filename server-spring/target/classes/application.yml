@@ -40,3 +40,7 @@ s3:
 logging:
   level:
     org.hibernate.SQL: warn
+
+# 演示数据：仅在 photos 表为空时插入若干作品与标签。生产环境请设 TONGJING_SEED_DEMO=false
+tongjing:
+  seed-demo-data: ${TONGJING_SEED_DEMO:true}

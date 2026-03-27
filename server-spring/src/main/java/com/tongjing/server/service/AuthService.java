@@ -99,7 +99,7 @@ public class AuthService {
                                     u.setAvatarUrl(
                                             "https://ui-avatars.com/api/?name="
                                                     + name
-                                                    + "&background=002FA7&color=fff");
+                                                    + "&background=002FA7&color=fff&format=png");
                                     return userRepository.save(u);
                                 });
 
@@ -152,7 +152,7 @@ public class AuthService {
             String defAv =
                     "https://ui-avatars.com/api/?name="
                             + URLEncoder.encode(user.getUsername(), StandardCharsets.UTF_8)
-                            + "&background=002FA7&color=fff";
+                            + "&background=002FA7&color=fff&format=png";
             var avNode = providerData.get("avatar");
             user.setAvatarUrl(
                     avNode != null && avNode.isTextual() ? avNode.asText() : defAv);

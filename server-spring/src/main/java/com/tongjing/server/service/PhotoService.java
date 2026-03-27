@@ -36,6 +36,9 @@ public class PhotoService {
                 Specification.where(PhotoSpecifications.cameraContains(camera))
                         .and(PhotoSpecifications.lensContains(lens))
                         .and(PhotoSpecifications.hasSceneTag(scene));
+        if ("following".equals(tab)) {
+            spec = spec.and(PhotoSpecifications.authoredByFollowedUsers(currentUserId));
+        }
         Sort sort =
                 "hot".equals(tab)
                         ? Sort.by(Sort.Order.desc("likesCount"), Sort.Order.desc("createdAt"))
@@ -44,7 +47,7 @@ public class PhotoService {
         Page<Photo> result = photoRepository.findAll(spec, pageable);
         List<Map<String, Object>> photos =
                 enrichPhotos(result.getContent(), currentUserId);
-        long total = photoRepository.count();
+        long total = result.getTotalElements();
         return wrapPage(photos, page, limit, total);
     }
 

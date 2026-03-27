@@ -12,8 +12,10 @@ import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:tongjing/config/app_config.dart';
 import 'package:tongjing/models/photo_models.dart';
 import 'package:tongjing/providers/auth_provider.dart';
+import 'package:tongjing/services/api_service.dart';
 import 'package:tongjing/theme/app_colors.dart';
 
 /// `MapScreen`：页面组件，负责构建界面布局并响应用户操作。
@@ -38,6 +40,8 @@ class _MapScreenState extends State<MapScreen> {
   bool _loading = true;
   String? _error;
   String _radiusKm = '50';
+  static const _mockImage =
+      'https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?auto=format&fit=crop&w=1200&q=80';
 
   @override
   void dispose() {
@@ -67,6 +71,16 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> _load() async {
+    if (AppConfig.useMockData) {
+      setState(() {
+        _loading = false;
+        _error = null;
+        _markers = _mockMarkers();
+        _popular = _mockPopular();
+      });
+      return;
+    }
+
     setState(() {
       _loading = true;
       _error = null;
@@ -84,7 +98,11 @@ class _MapScreenState extends State<MapScreen> {
         _popular = pop;
       });
     } catch (e) {
-      setState(() => _error = e.toString());
+      setState(() {
+        _error = e is ApiException ? e.message : '地图数据加载失败';
+        _markers = [];
+        _popular = [];
+      });
     } finally {
       setState(() => _loading = false);
     }
@@ -138,6 +156,26 @@ class _MapScreenState extends State<MapScreen> {
                       filled: true,
                       fillColor: Colors.white,
                       border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEAF0FF),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Text(
+                      'AI 预测：今日 17:45 - 18:20 光线最佳，适合城市夜景机位',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.kleinBlue,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -294,5 +332,65 @@ class _MapScreenState extends State<MapScreen> {
         ),
       ),
     );
+  }
+
+  List<PhotoListItem> _mockMarkers() {
+    return [
+      PhotoListItem(
+        id: 99001,
+        imageUrl: _mockImage,
+        title: '外滩机位示例',
+        locationName: '外滩观景台',
+        latitude: 31.2400,
+        longitude: 121.4900,
+        cameraModel: 'Sony A7M4',
+        likesCount: 120,
+      ),
+      PhotoListItem(
+        id: 99002,
+        imageUrl:
+            'https://images.unsplash.com/photo-1514565131-fce0801e5785?auto=format&fit=crop&w=1200&q=80',
+        title: '陆家嘴夜景示例',
+        locationName: '陆家嘴滨江',
+        latitude: 31.2350,
+        longitude: 121.5070,
+        cameraModel: 'Canon R6',
+        likesCount: 88,
+      ),
+      PhotoListItem(
+        id: 99003,
+        imageUrl:
+            'https://images.unsplash.com/photo-1461716834815-55d4f42a5d05?auto=format&fit=crop&w=1200&q=80',
+        title: '武康路街拍示例',
+        locationName: '武康路',
+        latitude: 31.2044,
+        longitude: 121.4338,
+        cameraModel: 'Fujifilm X-T5',
+        likesCount: 66,
+      ),
+    ];
+  }
+
+  List<Map<String, dynamic>> _mockPopular() {
+    return [
+      {
+        'location_name': '外滩观景台',
+        'latitude': 31.2400,
+        'longitude': 121.4900,
+        'photo_count': 86,
+      },
+      {
+        'location_name': '陆家嘴滨江',
+        'latitude': 31.2350,
+        'longitude': 121.5070,
+        'photo_count': 59,
+      },
+      {
+        'location_name': '武康路',
+        'latitude': 31.2044,
+        'longitude': 121.4338,
+        'photo_count': 42,
+      },
+    ];
   }
 }

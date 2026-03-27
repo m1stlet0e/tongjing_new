@@ -2,6 +2,7 @@ package com.tongjing.server.service;
 
 import com.tongjing.server.entity.Photo;
 import com.tongjing.server.entity.PhotoTag;
+import com.tongjing.server.entity.UserFollow;
 import jakarta.persistence.criteria.Root;
 import jakarta.persistence.criteria.Subquery;
 import org.springframework.data.jpa.domain.Specification;
@@ -49,6 +50,22 @@ public final class PhotoSpecifications {
             sq.select(tag.get("photoId"));
             sq.where(cb.equal(tag.get("tagName"), scene));
             return root.get("id").in(sq);
+        };
+    }
+
+    /**
+     * 仅保留「当前用户所关注的人」发布的作品；followerUserId 为 null 时不匹配任何行。
+     */
+    public static Specification<Photo> authoredByFollowedUsers(Integer followerUserId) {
+        return (root, query, cb) -> {
+            if (followerUserId == null) {
+                return cb.disjunction();
+            }
+            Subquery<Integer> sq = query.subquery(Integer.class);
+            Root<UserFollow> uf = sq.from(UserFollow.class);
+            sq.select(uf.get("followingId"));
+            sq.where(cb.equal(uf.get("followerId"), followerUserId));
+            return root.get("userId").in(sq);
         };
     }
 }
