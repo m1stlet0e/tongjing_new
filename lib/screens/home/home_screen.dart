@@ -286,6 +286,7 @@ class _HomeScreenState extends State<HomeScreen> {
   ///
   /// 方法：`build`。
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthNotifier>();
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -348,7 +349,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: RefreshIndicator(
                 color: AppColors.kleinBlue,
                 onRefresh: _refresh,
-                child: _buildBody(),
+                child: _buildBody(auth),
               ),
             ),
           ],
@@ -395,7 +396,7 @@ class _HomeScreenState extends State<HomeScreen> {
   /// 执行业务流程并返回该流程的处理结果。
   ///
   /// 方法：`_buildBody`。
-  Widget _buildBody() {
+  Widget _buildBody(AuthNotifier auth) {
     final shown = _applyApertureFilter(_photos);
     if (_loading && _photos.isEmpty) {
       return const Center(child: CircularProgressIndicator());
@@ -415,6 +416,37 @@ class _HomeScreenState extends State<HomeScreen> {
           children: const [
             SizedBox(height: 120),
             Center(child: Text('暂无符合筛选的作品')),
+          ],
+        );
+      }
+      if (_uiTab == 'following') {
+        return ListView(
+          children: [
+            const SizedBox(height: 100),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 28),
+              child: Text(
+                auth.isAuthenticated
+                    ? '关注页暂无动态。你可先去「推荐」浏览作品，在作者主页点击「+ 关注」；演示环境需种子数据中为演示账号写入关注关系。'
+                    : '登录后可查看已关注摄影师的最新作品。',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppColors.textSecondary, height: 1.45),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Center(
+              child: FilledButton(
+                onPressed: () {
+                  if (auth.isAuthenticated) {
+                    _refresh();
+                  } else {
+                    context.push('/login');
+                  }
+                },
+                style: FilledButton.styleFrom(backgroundColor: AppColors.kleinBlue),
+                child: Text(auth.isAuthenticated ? '刷新试试' : '去登录'),
+              ),
+            ),
           ],
         );
       }
@@ -462,7 +494,16 @@ class _HomeScreenState extends State<HomeScreen> {
                   final p = shown[index];
                   return _PhotoTile(
                     item: p,
-                    onTap: () => context.push('/photo/${p.id}'),
+                    interactionsEnabled: !AppConfig.useMockData,
+                    onOpenDetail: () async {
+                      await context.push('/photo/${p.id}');
+                      if (mounted) await _refresh();
+                    },
+                    onOpenAuthor: (p.userId != null && p.userId! > 0)
+                        ? () => context.push('/user/${p.userId}')
+                        : null,
+                    onToggleLike: () => _toggleLikeOnTile(p.id),
+                    onToggleFavorite: () => _toggleFavoriteOnTile(p.id),
                   );
                 },
                 childCount: shown.length + (_loadingMore ? 1 : 0),
@@ -493,13 +534,75 @@ class _HomeScreenState extends State<HomeScreen> {
     return double.tryParse(cleaned);
   }
 
+  void _replacePhotoInList(int photoId, PhotoListItem next) {
+    final idx = _photos.indexWhere((x) => x.id == photoId);
+    if (idx < 0 || !mounted) return;
+    setState(() => _photos[idx] = next);
+  }
+
+  Future<void> _toggleLikeOnTile(int photoId) async {
+    if (AppConfig.useMockData) return;
+    final auth = context.read<AuthNotifier>();
+    if (!auth.isAuthenticated) {
+      if (mounted) context.push('/login');
+      return;
+    }
+    final idx = _photos.indexWhere((x) => x.id == photoId);
+    if (idx < 0) return;
+    final old = _photos[idx];
+    try {
+      final liked = await auth.api.photoToggleLike(photoId);
+      if (!mounted) return;
+      final delta = liked == old.isLiked ? 0 : (liked ? 1 : -1);
+      _replacePhotoInList(
+        photoId,
+        old.copyWith(
+          isLiked: liked,
+          likesCount: (old.likesCount + delta).clamp(0, 1 << 30),
+        ),
+      );
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
+  }
+
+  Future<void> _toggleFavoriteOnTile(int photoId) async {
+    if (AppConfig.useMockData) return;
+    final auth = context.read<AuthNotifier>();
+    if (!auth.isAuthenticated) {
+      if (mounted) context.push('/login');
+      return;
+    }
+    final idx = _photos.indexWhere((x) => x.id == photoId);
+    if (idx < 0) return;
+    final old = _photos[idx];
+    try {
+      final fav = await auth.api.photoToggleFavorite(photoId);
+      if (!mounted) return;
+      final delta = fav == old.isFavorited ? 0 : (fav ? 1 : -1);
+      _replacePhotoInList(
+        photoId,
+        old.copyWith(
+          isFavorited: fav,
+          favoritesCount: (old.favoritesCount + delta).clamp(0, 1 << 30),
+        ),
+      );
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
+  }
+
   List<PhotoListItem> _mockPhotos() {
     final tabTitle = switch (_uiTab) {
       'latest' => '最新',
       'following' => '关注',
       _ => '推荐',
     };
-    return [
+    final base = [
       PhotoListItem(
         id: 90001,
         imageUrl: _mockImage,
@@ -674,6 +777,28 @@ class _HomeScreenState extends State<HomeScreen> {
         username: '肖像师',
       ),
     ];
+    List<PhotoListItem> expanded = base;
+    if (_uiTab == 'latest' || _uiTab == 'following') {
+      expanded = [...base];
+      for (var round = 1; round < 5; round++) {
+        for (final p in base) {
+          expanded.add(
+            p.copyWith(
+              id: p.id + round * 10000,
+              title: '${p.title ?? '作品'} · 续$round',
+            ),
+          );
+        }
+      }
+    }
+    return expanded
+        .map(
+          (p) => p.copyWith(
+            userId: 88001 + (p.id % 3),
+            username: p.username ?? '演示作者${(p.id % 3) + 1}',
+          ),
+        )
+        .toList();
   }
 }
 
@@ -681,10 +806,21 @@ class _HomeScreenState extends State<HomeScreen> {
 ///
 /// 主要用于统一该模块的核心能力与数据结构边界。
 class _PhotoTile extends StatelessWidget {
-  const _PhotoTile({required this.item, required this.onTap});
+  const _PhotoTile({
+    required this.item,
+    required this.onOpenDetail,
+    this.onOpenAuthor,
+    required this.onToggleLike,
+    required this.onToggleFavorite,
+    required this.interactionsEnabled,
+  });
 
   final PhotoListItem item;
-  final VoidCallback onTap;
+  final Future<void> Function() onOpenDetail;
+  final VoidCallback? onOpenAuthor;
+  final VoidCallback onToggleLike;
+  final VoidCallback onToggleFavorite;
+  final bool interactionsEnabled;
 
   @override
   /// 构建当前组件的 Widget 树，并根据状态输出对应界面。
@@ -695,12 +831,12 @@ class _PhotoTile extends StatelessWidget {
       color: Colors.white,
       borderRadius: BorderRadius.circular(12),
       clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: InkWell(
+              onTap: () => onOpenDetail(),
               child: CachedNetworkImage(
                 imageUrl: item.imageUrl,
                 fit: BoxFit.cover,
@@ -709,12 +845,15 @@ class _PhotoTile extends StatelessWidget {
                 errorWidget: (_, __, ___) => const Icon(Icons.broken_image),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                InkWell(
+                  onTap: () => onOpenDetail(),
+                  child: Text(
                     item.title ?? '未命名',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -723,18 +862,43 @@ class _PhotoTile extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    item.username == null || item.username!.isEmpty
-                        ? '@匿名作者'
-                        : '@${item.username}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: AppColors.textMuted,
-                    ),
-                  ),
+                ),
+                const SizedBox(height: 2),
+                onOpenAuthor != null
+                    ? GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: onOpenAuthor,
+                        child: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                item.username == null || item.username!.isEmpty
+                                    ? '@匿名作者'
+                                    : '@${item.username}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: AppColors.kleinBlue,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            const Icon(Icons.chevron_right, size: 14, color: AppColors.kleinBlue),
+                          ],
+                        ),
+                      )
+                    : Text(
+                        item.username == null || item.username!.isEmpty
+                            ? '@匿名作者'
+                            : '@${item.username}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
                   const SizedBox(height: 2),
                   Text(
                     _cameraLine(item),
@@ -748,11 +912,45 @@ class _PhotoTile extends StatelessWidget {
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      Icon(Icons.favorite_border,
-                          size: 14, color: AppColors.textMuted),
-                      Text(' ${item.likesCount}',
-                          style: const TextStyle(
-                              fontSize: 11, color: AppColors.textMuted)),
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: interactionsEnabled ? onToggleLike : null,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              item.isLiked
+                                  ? Icons.favorite
+                                  : Icons.favorite_border,
+                              size: 14,
+                              color: item.isLiked
+                                  ? Colors.red
+                                  : AppColors.textMuted,
+                            ),
+                            Text(
+                              ' ${item.likesCount}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: item.isLiked
+                                    ? Colors.red
+                                    : AppColors.textMuted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: interactionsEnabled ? onToggleFavorite : null,
+                        child: Icon(
+                          item.isFavorited ? Icons.star : Icons.star_border,
+                          size: 14,
+                          color: item.isFavorited
+                              ? AppColors.champagneGold
+                              : AppColors.textMuted,
+                        ),
+                      ),
                       const Spacer(),
                       Text(
                         _distanceTag(item),
@@ -766,8 +964,7 @@ class _PhotoTile extends StatelessWidget {
                 ],
               ),
             ),
-          ],
-        ),
+        ],
       ),
     );
   }

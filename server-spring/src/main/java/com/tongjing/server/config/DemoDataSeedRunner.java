@@ -3,8 +3,10 @@ package com.tongjing.server.config;
 import com.tongjing.server.entity.Photo;
 import com.tongjing.server.entity.PhotoTag;
 import com.tongjing.server.entity.User;
+import com.tongjing.server.entity.UserFollow;
 import com.tongjing.server.repository.PhotoRepository;
 import com.tongjing.server.repository.PhotoTagRepository;
+import com.tongjing.server.repository.UserFollowRepository;
 import com.tongjing.server.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,6 +35,7 @@ public class DemoDataSeedRunner implements CommandLineRunner {
     private final UserRepository userRepository;
     private final PhotoRepository photoRepository;
     private final PhotoTagRepository photoTagRepository;
+    private final UserFollowRepository userFollowRepository;
 
     @Override
     @Transactional
@@ -208,7 +211,107 @@ public class DemoDataSeedRunner implements CommandLineRunner {
                 412,
                 new String[][] {{"赛博朋克", "style"}, {"夜景", "scene"}});
 
-        log.info("tongjing: demo seed finished, {} photos", photoRepository.count());
+        User north =
+                ensurePhotographer(
+                        "13900001001",
+                        "摄影师·北辰",
+                        "风光与人文，演示账号用于「关注」动态与作者主页。");
+        User south =
+                ensurePhotographer(
+                        "13900001002",
+                        "摄影师·南岸",
+                        "人像与街拍，与同镜演示账号组成关注关系。");
+
+        String[] galleryUrls =
+                new String[] {
+                    "https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?auto=format&fit=crop&w=1200&q=80",
+                    "https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1200&q=80",
+                    "https://images.unsplash.com/photo-1482192596544-9eb780fc7f66?auto=format&fit=crop&w=1200&q=80",
+                    "https://images.unsplash.com/photo-1446776877081-d282a0f896e2?auto=format&fit=crop&w=1200&q=80",
+                    "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=1200&q=80",
+                    "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80",
+                    "https://images.unsplash.com/photo-1493246507139-91e8fad9978e?auto=format&fit=crop&w=1200&q=80",
+                    "https://images.unsplash.com/photo-1518837695005-2083093ee35b?auto=format&fit=crop&w=1200&q=80",
+                };
+        for (int i = 0; i < 20; i++) {
+            seedQuick(
+                    north.getId(),
+                    "北辰作品集 " + (i + 1),
+                    galleryUrls[i % galleryUrls.length],
+                    40 + i * 3,
+                    i);
+        }
+        for (int i = 0; i < 20; i++) {
+            seedQuick(
+                    south.getId(),
+                    "南岸随拍 " + (i + 1),
+                    galleryUrls[(i + 4) % galleryUrls.length],
+                    35 + i * 4,
+                    i + 7);
+        }
+
+        ensureFollow(uid, north.getId());
+        ensureFollow(uid, south.getId());
+
+        log.info(
+                "tongjing: demo seed finished, {} photos, demo user follows {} and {}",
+                photoRepository.count(),
+                north.getUsername(),
+                south.getUsername());
+    }
+
+    private User ensurePhotographer(String phone, String username, String bio) {
+        return userRepository
+                .findByPhone(phone)
+                .orElseGet(
+                        () -> {
+                            User u = new User();
+                            u.setPhone(phone);
+                            u.setUsername(username);
+                            u.setBio(bio);
+                            String enc = URLEncoder.encode(username, StandardCharsets.UTF_8);
+                            u.setAvatarUrl(
+                                    "https://ui-avatars.com/api/?name="
+                                            + enc
+                                            + "&background=C45C26&color=fff&format=png");
+                            return userRepository.save(u);
+                        });
+    }
+
+    private void ensureFollow(int followerId, int followingId) {
+        if (userFollowRepository.findByFollowerIdAndFollowingId(followerId, followingId).isEmpty()) {
+            UserFollow f = new UserFollow();
+            f.setFollowerId(followerId);
+            f.setFollowingId(followingId);
+            userFollowRepository.save(f);
+        }
+    }
+
+    private void seedQuick(int userId, String title, String imageUrl, int likes, int tagVariant) {
+        String[][] tags =
+                tagVariant % 3 == 0
+                        ? new String[][] {{"风光", "scene"}}
+                        : tagVariant % 3 == 1
+                                ? new String[][] {{"人像", "scene"}}
+                                : new String[][] {{"街拍", "scene"}};
+        seed(
+                userId,
+                title,
+                "种子写入的演示作品，用于最新/关注/作者主页列表。",
+                imageUrl,
+                "Sony",
+                "A7M4",
+                "FE 50mm",
+                "50mm",
+                "2.8",
+                "1/250",
+                400,
+                new BigDecimal("31.2200"),
+                new BigDecimal("121.4800"),
+                "演示机位",
+                "自动演示数据",
+                likes,
+                tags);
     }
 
     private void seed(

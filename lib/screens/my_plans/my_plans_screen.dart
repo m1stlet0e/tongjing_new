@@ -128,6 +128,12 @@ class _MyPlansScreenState extends State<MyPlansScreen> {
                               value: p.done,
                               onChanged: (v) => _toggleDone(p, v),
                             ),
+                            onTap: p.photoId > 0
+                                ? () async {
+                                    await context.push('/photo/${p.photoId}');
+                                    if (mounted) await _load();
+                                  }
+                                : null,
                           ),
                         );
                       },

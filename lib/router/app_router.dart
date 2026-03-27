@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:tongjing/providers/auth_provider.dart';
 import 'package:tongjing/screens/add_spot/add_spot_screen.dart';
+import 'package:tongjing/screens/author_profile/author_profile_screen.dart';
 import 'package:tongjing/screens/challenges/challenges_screen.dart';
 import 'package:tongjing/screens/edit_profile/edit_profile_screen.dart';
 import 'package:tongjing/screens/favorites/favorites_screen.dart';
@@ -95,6 +96,14 @@ GoRouter createAppRouter(AuthNotifier auth) {
         builder: (context, state) {
           final id = int.tryParse(state.pathParameters['id'] ?? '') ?? 0;
           return PhotoDetailScreen(photoId: id);
+        },
+      ),
+      GoRoute(
+        path: '/user/:id',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) {
+          final id = int.tryParse(state.pathParameters['id'] ?? '') ?? 0;
+          return AuthorProfileScreen(userId: id);
         },
       ),
       GoRoute(

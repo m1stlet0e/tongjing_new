@@ -96,7 +96,10 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                       itemBuilder: (context, i) {
                         final p = _list[i];
                         return GestureDetector(
-                          onTap: () => context.push('/photo/${p.id}'),
+                          onTap: () async {
+                            await context.push('/photo/${p.id}');
+                            if (mounted) await _load();
+                          },
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(8),
                             child: CachedNetworkImage(imageUrl: p.imageUrl, fit: BoxFit.cover),

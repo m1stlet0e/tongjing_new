@@ -13,6 +13,7 @@ import 'package:tongjing/config/app_config.dart';
 import 'package:tongjing/models/photo_models.dart';
 import 'package:tongjing/models/plan_item.dart';
 import 'package:tongjing/providers/auth_provider.dart';
+import 'package:tongjing/router/app_router.dart';
 import 'package:tongjing/services/api_service.dart';
 import 'package:tongjing/services/plan_store.dart';
 import 'package:tongjing/theme/app_colors.dart';
@@ -75,6 +76,13 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
     await _syncPlanFlag();
   }
 
+  /// SnackBar 等异步回调可能在详情页已卸载后触发，不可用 [context]，需走根导航。
+  void _pushMyPlansUsingRootNavigator() {
+    final root = rootNavigatorKey.currentContext;
+    if (root == null || !root.mounted) return;
+    GoRouter.of(root).push('/my-plans');
+  }
+
   Future<void> _syncPlanFlag() async {
     final p = _photo;
     if (p == null) return;
@@ -129,7 +137,7 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
         content: const Text('已加入拍摄计划'),
         action: SnackBarAction(
           label: '查看',
-          onPressed: () => context.push('/my-plans'),
+          onPressed: _pushMyPlansUsingRootNavigator,
         ),
       ),
     );
@@ -153,6 +161,7 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
           shutterSpeed: '1/125',
           iso: 320,
           username: 'MockCreator',
+          userId: 88001,
           likesCount: 128,
           favoritesCount: 38,
           commentsCount: 2,
@@ -181,6 +190,7 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
           shutterSpeed: '4s',
           iso: 100,
           username: 'MockCreator',
+          userId: 88001,
           likesCount: 96,
           favoritesCount: 24,
           commentsCount: 1,
@@ -207,6 +217,7 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
           shutterSpeed: '1/250',
           iso: 200,
           username: 'MockCreator',
+          userId: 88002,
           likesCount: 66,
           favoritesCount: 12,
           commentsCount: 0,
@@ -227,33 +238,11 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
       final liked = await auth.api.photoToggleLike(widget.photoId);
       setState(() {
         if (_photo != null) {
-          final delta = liked ? 1 : -1;
-          _photo = PhotoDetail(
-            id: _photo!.id,
-            imageUrl: _photo!.imageUrl,
-            title: _photo!.title,
-            description: _photo!.description,
-            locationName: _photo!.locationName,
-            cameraModel: _photo!.cameraModel,
-            focalLength: _photo!.focalLength,
-            aperture: _photo!.aperture,
-            shutterSpeed: _photo!.shutterSpeed,
-            iso: _photo!.iso,
-            username: _photo!.username,
-            avatarUrl: _photo!.avatarUrl,
-            likesCount: (_photo!.likesCount + delta).clamp(0, 1 << 30),
-            commentsCount: _photo!.commentsCount,
-            favoritesCount: _photo!.favoritesCount,
-            tags: _photo!.tags,
+          final prev = _photo!;
+          final delta = liked == prev.isLiked ? 0 : (liked ? 1 : -1);
+          _photo = prev.copyWith(
             isLiked: liked,
-            isFavorited: _photo!.isFavorited,
-            latitude: _photo!.latitude,
-            longitude: _photo!.longitude,
-            cameraBrand: _photo!.cameraBrand,
-            userBio: _photo!.userBio,
-            shootingTips: _photo!.shootingTips,
-            userId: _photo!.userId,
-            comments: _photo!.comments,
+            likesCount: (prev.likesCount + delta).clamp(0, 1 << 30),
           );
         }
       });
@@ -272,68 +261,22 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
     }
     try {
       final fav = await auth.api.photoToggleFavorite(widget.photoId);
-      if (fav && _photo != null) {
-        try {
-          await _planStore.upsert(
-            auth.api,
-            PlanItem(
-              photoId: _photo!.id,
-              title: _photo!.title ?? '未命名拍摄计划',
-              location: _photo!.locationName ?? '未标记机位',
-              imageUrl: _photo!.imageUrl,
-              cameraLine:
-                  '${_photo!.cameraModel ?? '-'} | ${_photo!.focalLength ?? '-'} | f/${_photo!.aperture ?? '-'}',
-              tips: _photo!.shootingTips,
-              createdAt: DateTime.now().toIso8601String(),
-            ),
-          );
-        } catch (_) {
-          // 计划同步失败不阻断收藏成功
-        }
-      }
+      if (!mounted || _photo == null) return;
+      final prev = _photo!;
+      final delta = fav == prev.isFavorited ? 0 : (fav ? 1 : -1);
       setState(() {
-        if (_photo != null) {
-          _photo = PhotoDetail(
-            id: _photo!.id,
-            imageUrl: _photo!.imageUrl,
-            title: _photo!.title,
-            description: _photo!.description,
-            locationName: _photo!.locationName,
-            cameraModel: _photo!.cameraModel,
-            focalLength: _photo!.focalLength,
-            aperture: _photo!.aperture,
-            shutterSpeed: _photo!.shutterSpeed,
-            iso: _photo!.iso,
-            username: _photo!.username,
-            avatarUrl: _photo!.avatarUrl,
-            likesCount: _photo!.likesCount,
-            commentsCount: _photo!.commentsCount,
-            favoritesCount: _photo!.favoritesCount,
-            tags: _photo!.tags,
-            isLiked: _photo!.isLiked,
-            isFavorited: fav,
-            latitude: _photo!.latitude,
-            longitude: _photo!.longitude,
-            cameraBrand: _photo!.cameraBrand,
-            userBio: _photo!.userBio,
-            shootingTips: _photo!.shootingTips,
-            userId: _photo!.userId,
-            comments: _photo!.comments,
-          );
-        }
-      });
-      if (fav && mounted) {
-        setState(() => _inPlan = true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('收藏成功，已同步到拍摄计划'),
-            action: SnackBarAction(
-              label: '查看',
-              onPressed: () => context.push('/my-plans'),
-            ),
-          ),
+        _photo = prev.copyWith(
+          isFavorited: fav,
+          favoritesCount: (prev.favoritesCount + delta).clamp(0, 1 << 30),
         );
-      }
+      });
+      await _syncPlanFlag();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(fav ? '已加入收藏' : '已取消收藏'),
+        ),
+      );
     } on ApiException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
@@ -366,6 +309,40 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
     }
     if (!mounted) return;
     context.pop();
+  }
+
+  Widget _buildAuthorRow(BuildContext context) {
+    final p = _photo!;
+    final name = p.username ?? '匿名作者';
+    final uid = p.userId;
+    if (uid == null || uid <= 0) {
+      return Text(
+        '作者：$name',
+        style: const TextStyle(color: AppColors.textSecondary),
+      );
+    }
+    return InkWell(
+      onTap: () => context.push('/user/$uid'),
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          children: [
+            const Text('作者：', style: TextStyle(color: AppColors.textSecondary)),
+            Expanded(
+              child: Text(
+                name,
+                style: const TextStyle(
+                  color: AppColors.kleinBlue,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const Icon(Icons.person_search_outlined, size: 18, color: AppColors.kleinBlue),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -455,10 +432,7 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
                                     ),
                                   ),
                                   const SizedBox(height: 8),
-                                  Text(
-                                    '作者：${_photo!.username ?? '匿名作者'}',
-                                    style: const TextStyle(color: AppColors.textSecondary),
-                                  ),
+                                  _buildAuthorRow(context),
                                   if (_photo!.description != null &&
                                       _photo!.description!.isNotEmpty) ...[
                                     const SizedBox(height: 10),

@@ -41,6 +41,7 @@ class PhotoListItem {
     this.isFavorited = false,
     this.latitude,
     this.longitude,
+    this.userId,
   });
 
   final int id;
@@ -63,6 +64,9 @@ class PhotoListItem {
   final bool isFavorited;
   final double? latitude;
   final double? longitude;
+
+  /// 作者用户 ID（动态流接口 `user_id`）。
+  final int? userId;
 
   factory PhotoListItem.fromJson(Map<String, dynamic> json) {
     final tagsRaw = json['tags'];
@@ -93,6 +97,7 @@ class PhotoListItem {
       isFavorited: json['is_favorited'] == true,
       latitude: _parseDouble(json['latitude']),
       longitude: _parseDouble(json['longitude']),
+      userId: (json['user_id'] as num?)?.toInt(),
     );
   }
 
@@ -100,6 +105,54 @@ class PhotoListItem {
     if (v == null) return null;
     if (v is num) return v.toDouble();
     return double.tryParse(v.toString());
+  }
+
+  PhotoListItem copyWith({
+    int? id,
+    String? imageUrl,
+    String? title,
+    String? description,
+    String? locationName,
+    String? cameraModel,
+    String? focalLength,
+    String? aperture,
+    String? shutterSpeed,
+    int? iso,
+    String? username,
+    String? avatarUrl,
+    int? likesCount,
+    int? commentsCount,
+    int? favoritesCount,
+    List<PhotoTag>? tags,
+    bool? isLiked,
+    bool? isFavorited,
+    double? latitude,
+    double? longitude,
+    int? userId,
+  }) {
+    return PhotoListItem(
+      id: id ?? this.id,
+      imageUrl: imageUrl ?? this.imageUrl,
+      title: title ?? this.title,
+      description: description ?? this.description,
+      locationName: locationName ?? this.locationName,
+      cameraModel: cameraModel ?? this.cameraModel,
+      focalLength: focalLength ?? this.focalLength,
+      aperture: aperture ?? this.aperture,
+      shutterSpeed: shutterSpeed ?? this.shutterSpeed,
+      iso: iso ?? this.iso,
+      username: username ?? this.username,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
+      likesCount: likesCount ?? this.likesCount,
+      commentsCount: commentsCount ?? this.commentsCount,
+      favoritesCount: favoritesCount ?? this.favoritesCount,
+      tags: tags ?? this.tags,
+      isLiked: isLiked ?? this.isLiked,
+      isFavorited: isFavorited ?? this.isFavorited,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      userId: userId ?? this.userId,
+    );
   }
 }
 
@@ -157,17 +210,16 @@ class PhotoDetail extends PhotoListItem {
     super.isFavorited,
     super.latitude,
     super.longitude,
+    super.userId,
     this.cameraBrand,
     this.userBio,
     this.shootingTips,
-    this.userId,
     this.comments = const [],
   });
 
   final String? cameraBrand;
   final String? userBio;
   final String? shootingTips;
-  final int? userId;
   final List<PhotoComment> comments;
 
   factory PhotoDetail.fromJson(Map<String, dynamic> json) {
@@ -200,11 +252,68 @@ class PhotoDetail extends PhotoListItem {
       isFavorited: base.isFavorited,
       latitude: base.latitude,
       longitude: base.longitude,
+      userId: base.userId ?? (json['user_id'] as num?)?.toInt(),
       cameraBrand: json['camera_brand']?.toString(),
       userBio: json['user_bio']?.toString(),
       shootingTips: json['shooting_tips']?.toString(),
-      userId: (json['user_id'] as num?)?.toInt(),
       comments: comments,
+    );
+  }
+
+  @override
+  PhotoDetail copyWith({
+    int? id,
+    String? imageUrl,
+    String? title,
+    String? description,
+    String? locationName,
+    String? cameraModel,
+    String? focalLength,
+    String? aperture,
+    String? shutterSpeed,
+    int? iso,
+    String? username,
+    String? avatarUrl,
+    int? likesCount,
+    int? commentsCount,
+    int? favoritesCount,
+    List<PhotoTag>? tags,
+    bool? isLiked,
+    bool? isFavorited,
+    double? latitude,
+    double? longitude,
+    int? userId,
+    String? cameraBrand,
+    String? userBio,
+    String? shootingTips,
+    List<PhotoComment>? comments,
+  }) {
+    return PhotoDetail(
+      id: id ?? this.id,
+      imageUrl: imageUrl ?? this.imageUrl,
+      title: title ?? this.title,
+      description: description ?? this.description,
+      locationName: locationName ?? this.locationName,
+      cameraModel: cameraModel ?? this.cameraModel,
+      focalLength: focalLength ?? this.focalLength,
+      aperture: aperture ?? this.aperture,
+      shutterSpeed: shutterSpeed ?? this.shutterSpeed,
+      iso: iso ?? this.iso,
+      username: username ?? this.username,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
+      likesCount: likesCount ?? this.likesCount,
+      commentsCount: commentsCount ?? this.commentsCount,
+      favoritesCount: favoritesCount ?? this.favoritesCount,
+      tags: tags ?? this.tags,
+      isLiked: isLiked ?? this.isLiked,
+      isFavorited: isFavorited ?? this.isFavorited,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      userId: userId ?? this.userId,
+      cameraBrand: cameraBrand ?? this.cameraBrand,
+      userBio: userBio ?? this.userBio,
+      shootingTips: shootingTips ?? this.shootingTips,
+      comments: comments ?? this.comments,
     );
   }
 }

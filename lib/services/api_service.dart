@@ -425,6 +425,65 @@ class ApiService {
     return UserModel.fromJson(Map<String, dynamic>.from(j['data'] as Map));
   }
 
+  /// 公开用户资料（含 `is_following`，未登录时为 false）。
+  Future<UserModel> usersPublic(int userId) async {
+    return _guardNetwork(() async {
+      final res = await http.get(
+        _u('/api/v1/users/$userId'),
+        headers: _jsonHeaders(auth: _tokenGetter() != null),
+      );
+      final j = await _decodeJson(res);
+      if (res.statusCode >= 400 || j['success'] != true) {
+        throw ApiException(j['error']?.toString() ?? '用户不存在', res.statusCode);
+      }
+      return UserModel.fromJson(Map<String, dynamic>.from(j['data'] as Map));
+    });
+  }
+
+  Future<({List<PhotoListItem> photos, Pagination pagination})> usersPublicPhotos(
+    int userId, {
+    int page = 1,
+    int limit = 24,
+  }) async {
+    return _guardNetwork(() async {
+      final res = await http.get(
+        _u('/api/v1/users/$userId/photos', {'page': '$page', 'limit': '$limit'}),
+        headers: _jsonHeaders(auth: _tokenGetter() != null),
+      );
+      final j = await _decodeJson(res);
+      if (res.statusCode >= 400 || j['success'] != true) {
+        throw ApiException(j['error']?.toString() ?? '加载作品失败', res.statusCode);
+      }
+      final data = j['data'] as Map<String, dynamic>;
+      final list = (data['photos'] as List<dynamic>? ?? [])
+          .map((e) => PhotoListItem.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      final p = data['pagination'] as Map<String, dynamic>? ?? {};
+      final pagination = Pagination(
+        page: (p['page'] as num?)?.toInt() ?? page,
+        limit: (p['limit'] as num?)?.toInt() ?? limit,
+        total: (p['total'] as num?)?.toInt() ?? 0,
+      );
+      return (photos: list, pagination: pagination);
+    });
+  }
+
+  /// 切换关注，返回当前是否已关注。
+  Future<bool> usersFollowToggle(int userId) async {
+    return _guardNetwork(() async {
+      final res = await http.post(
+        _u('/api/v1/users/$userId/follow'),
+        headers: _jsonHeaders(),
+      );
+      final j = await _decodeJson(res);
+      if (res.statusCode >= 400 || j['success'] != true) {
+        throw ApiException(j['error']?.toString() ?? '操作失败', res.statusCode);
+      }
+      final data = j['data'] as Map<String, dynamic>? ?? {};
+      return data['is_following'] == true;
+    });
+  }
+
   Future<Map<String, dynamic>> uploadAvatar(String filePath) async {
     final uri = _u('/api/v1/upload/avatar');
     final request = http.MultipartRequest('POST', uri);

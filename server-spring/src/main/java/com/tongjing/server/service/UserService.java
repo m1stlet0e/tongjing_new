@@ -249,6 +249,7 @@ public class UserService {
     private static Map<String, Object> photoShallow(Photo p) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", p.getId());
+        m.put("user_id", p.getUserId());
         m.put("image_url", p.getImageUrl());
         m.put("title", p.getTitle());
         m.put("description", p.getDescription());

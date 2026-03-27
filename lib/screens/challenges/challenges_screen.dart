@@ -82,22 +82,13 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
       return;
     }
     final item = _item;
-    if (item == null) return;
+    if (item == null || item.isJoined) return;
     try {
       await auth.api.challengeJoin(item.id);
       if (!mounted) return;
-      setState(() {
-        _item = ChallengeItem(
-          id: item.id,
-          title: item.title,
-          description: item.description,
-          coverImageUrl: item.coverImageUrl,
-          participantCount: item.participantCount + (item.isJoined ? 0 : 1),
-          daysLeft: item.daysLeft,
-          isJoined: true,
-          samplePhotos: item.samplePhotos,
-        );
-      });
+      final fresh = await auth.api.challengeDetail(item.id);
+      if (!mounted) return;
+      setState(() => _item = fresh);
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('参与成功')));
     } on ApiException catch (e) {
@@ -170,7 +161,7 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
                             style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
                         const SizedBox(height: 20),
                         FilledButton(
-                          onPressed: _join,
+                          onPressed: item.isJoined ? null : _join,
                           style: FilledButton.styleFrom(
                             backgroundColor: AppColors.kleinBlue,
                             minimumSize: const Size(double.infinity, 48),

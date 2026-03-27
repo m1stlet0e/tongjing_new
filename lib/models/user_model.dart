@@ -15,6 +15,7 @@ class UserModel {
     this.photosCount,
     this.followersCount,
     this.followingCount,
+    this.isFollowing,
   });
 
   final int id;
@@ -26,7 +27,11 @@ class UserModel {
   final int? followersCount;
   final int? followingCount;
 
+  /// 公开主页接口 [is_following]；`/me` 无此字段时为 null。
+  final bool? isFollowing;
+
   factory UserModel.fromJson(Map<String, dynamic> json) {
+    final rawFollow = json['is_following'];
     return UserModel(
       id: (json['id'] as num).toInt(),
       username: json['username']?.toString() ?? '',
@@ -36,6 +41,11 @@ class UserModel {
       photosCount: (json['photos_count'] as num?)?.toInt(),
       followersCount: (json['followers_count'] as num?)?.toInt(),
       followingCount: (json['following_count'] as num?)?.toInt(),
+      isFollowing: rawFollow == true
+          ? true
+          : rawFollow == false
+              ? false
+              : null,
     );
   }
 

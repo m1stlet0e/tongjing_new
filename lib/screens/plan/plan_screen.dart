@@ -13,6 +13,7 @@ import 'package:tongjing/models/plan_item.dart';
 import 'package:tongjing/providers/auth_provider.dart';
 import 'package:tongjing/services/plan_store.dart';
 import 'package:tongjing/theme/app_colors.dart';
+import 'package:tongjing/widgets/plan_tab_refresh_scope.dart';
 
 /// `PlanScreen`：页面组件，负责构建界面布局并响应用户操作。
 ///
@@ -35,6 +36,12 @@ class _PlanScreenState extends State<PlanScreen> {
   bool _loadingChallenges = true;
   int _tab = 0;
 
+  ValueNotifier<int>? _planTabSignal;
+  void _onPlanTabTick() {
+    _loadPlans();
+    _loadChallenges();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -42,6 +49,23 @@ class _PlanScreenState extends State<PlanScreen> {
       _loadPlans();
       _loadChallenges();
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final next = PlanTabRefreshScope.maybeOf(context);
+    if (!identical(next, _planTabSignal)) {
+      _planTabSignal?.removeListener(_onPlanTabTick);
+      _planTabSignal = next;
+      _planTabSignal?.addListener(_onPlanTabTick);
+    }
+  }
+
+  @override
+  void dispose() {
+    _planTabSignal?.removeListener(_onPlanTabTick);
+    super.dispose();
   }
 
   Future<void> _loadPlans() async {
@@ -153,7 +177,15 @@ class _PlanScreenState extends State<PlanScreen> {
   Widget _chip(String label, int i) {
     final on = _tab == i;
     return InkWell(
-      onTap: () => setState(() => _tab = i),
+      onTap: () {
+        if (_tab == i) return;
+        setState(() => _tab = i);
+        if (i == 0) {
+          _loadPlans();
+        } else {
+          _loadChallenges();
+        }
+      },
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14),
         decoration: BoxDecoration(
@@ -207,31 +239,41 @@ class _PlanScreenState extends State<PlanScreen> {
         ],
       );
     }
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemCount: _plans.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 12),
-      itemBuilder: (context, index) {
-        final p = _plans[index];
-        return Card(
-          child: ListTile(
-            title: Text(p.title),
-            subtitle: Text(
-              '${p.location}\n${p.cameraLine}${p.tips == null || p.tips!.isEmpty ? '' : '\n${p.tips}'}',
-              maxLines: 3,
+    return RefreshIndicator(
+      onRefresh: _loadPlans,
+      child: ListView.separated(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        itemCount: _plans.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 12),
+        itemBuilder: (context, index) {
+          final p = _plans[index];
+          return Card(
+            child: ListTile(
+              title: Text(p.title),
+              subtitle: Text(
+                '${p.location}\n${p.cameraLine}${p.tips == null || p.tips!.isEmpty ? '' : '\n${p.tips}'}',
+                maxLines: 3,
+              ),
+              isThreeLine: true,
+              leading: Checkbox(
+                value: p.done,
+                onChanged: (v) => _toggleDone(p, v),
+              ),
+              trailing: FilledButton.tonal(
+                onPressed: () => context.go('/map'),
+                child: const Text('去打卡'),
+              ),
+              onTap: p.photoId > 0
+                  ? () async {
+                      await context.push('/photo/${p.photoId}');
+                      if (mounted) await _loadPlans();
+                    }
+                  : null,
             ),
-            isThreeLine: true,
-            leading: Checkbox(
-              value: p.done,
-              onChanged: (v) => _toggleDone(p, v),
-            ),
-            trailing: FilledButton.tonal(
-              onPressed: () => context.go('/map'),
-              child: const Text('去打卡'),
-            ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 
@@ -251,33 +293,43 @@ class _PlanScreenState extends State<PlanScreen> {
         ],
       );
     }
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemCount: _challenges.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 12),
-      itemBuilder: (context, index) {
-        final c = _challenges[index];
-        return Card(
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: () => context.push('/challenges?id=${c.id}'),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(c.title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
-                  const SizedBox(height: 6),
-                  Text(c.description, style: const TextStyle(color: AppColors.textSecondary)),
-                  const SizedBox(height: 8),
-                  Text('${c.participantCount} 人参与 · 剩余 ${c.daysLeft} 天',
-                      style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
-                ],
+    return RefreshIndicator(
+      onRefresh: _loadChallenges,
+      child: ListView.separated(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        itemCount: _challenges.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 12),
+        itemBuilder: (context, index) {
+          final c = _challenges[index];
+          return Card(
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: () async {
+                await context.push('/challenges?id=${c.id}');
+                if (mounted) await _loadChallenges();
+              },
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(c.title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+                    const SizedBox(height: 6),
+                    Text(c.description, style: const TextStyle(color: AppColors.textSecondary)),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${c.participantCount} 人参与 · 剩余 ${c.daysLeft} 天'
+                      '${c.isJoined ? ' · 已参与' : ''}',
+                      style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }
