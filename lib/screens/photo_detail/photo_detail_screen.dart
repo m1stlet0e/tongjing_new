@@ -9,6 +9,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:tongjing/screens/map/map_screen.dart' show MapOpenArgs;
 import 'package:tongjing/config/app_config.dart';
 import 'package:tongjing/models/photo_models.dart';
 import 'package:tongjing/models/plan_item.dart';
@@ -81,6 +82,29 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
     final root = rootNavigatorKey.currentContext;
     if (root == null || !root.mounted) return;
     GoRouter.of(root).push('/my-plans');
+  }
+
+  void _openLocationOnMap() {
+    final p = _photo;
+    if (p == null) return;
+    final name = p.locationName?.trim();
+    if (name == null || name.isEmpty) return;
+    final lat = p.latitude;
+    final lng = p.longitude;
+    if (lat != null && lng != null) {
+      context.go(
+        '/map',
+        extra: MapOpenArgs(lat: lat, lng: lng, hintName: name),
+      );
+    } else {
+      context.go('/map');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('该作品未标注坐标，已打开地图，可在列表中浏览附近作品')),
+        );
+      });
+    }
   }
 
   Future<void> _syncPlanFlag() async {
@@ -350,7 +374,8 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
   ///
   /// 方法：`build`。
   Widget build(BuildContext context) {
-    final auth = context.watch<AuthNotifier>();
+    final meId = context.select<AuthNotifier, int?>(
+        (a) => a.isAuthenticated ? a.user?.id : null);
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -388,7 +413,7 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
                                 onPressed: () => context.pop(),
                               ),
                               const Spacer(),
-                              if (auth.isAuthenticated && auth.user?.id == _photo!.userId)
+                              if (meId != null && meId == _photo!.userId)
                                 IconButton(
                                   style: IconButton.styleFrom(
                                     backgroundColor: const Color(0x66000000),
@@ -508,7 +533,49 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
                                         ),
                                         if (_photo!.locationName != null &&
                                             _photo!.locationName!.isNotEmpty)
-                                          Text('机位：${_photo!.locationName}'),
+                                          Padding(
+                                            padding: const EdgeInsets.only(top: 6),
+                                            child: InkWell(
+                                              onTap: _openLocationOnMap,
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              child: Padding(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  vertical: 4,
+                                                  horizontal: 2,
+                                                ),
+                                                child: Row(
+                                                  children: [
+                                                    Icon(
+                                                      Icons.map_outlined,
+                                                      size: 18,
+                                                      color:
+                                                          AppColors.kleinBlue,
+                                                    ),
+                                                    const SizedBox(width: 6),
+                                                    Expanded(
+                                                      child: Text(
+                                                        '机位：${_photo!.locationName}',
+                                                        style: const TextStyle(
+                                                          color: AppColors
+                                                              .kleinBlue,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    Icon(
+                                                      Icons.chevron_right,
+                                                      size: 20,
+                                                      color: AppColors
+                                                          .textMuted,
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          ),
                                       ],
                                     ),
                                   ),

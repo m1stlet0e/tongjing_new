@@ -125,8 +125,9 @@ class _AuthorProfileScreenState extends State<AuthorProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final auth = context.watch<AuthNotifier>();
-    final isMe = auth.isAuthenticated && auth.user?.id == widget.userId;
+    final meId = context.select<AuthNotifier, int?>(
+        (a) => a.isAuthenticated ? a.user?.id : null);
+    final isMe = meId != null && meId == widget.userId;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F4EF),

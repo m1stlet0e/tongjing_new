@@ -77,7 +77,7 @@ class PhotoListItem {
           .toList();
     }
     return PhotoListItem(
-      id: (json['id'] as num).toInt(),
+      id: _jsonInt(json['id']),
       imageUrl: json['image_url']?.toString() ?? '',
       title: json['title']?.toString(),
       description: json['description']?.toString(),
@@ -86,19 +86,33 @@ class PhotoListItem {
       focalLength: json['focal_length']?.toString(),
       aperture: json['aperture']?.toString(),
       shutterSpeed: json['shutter_speed']?.toString(),
-      iso: (json['iso'] as num?)?.toInt(),
+      iso: _jsonIntNullable(json['iso']),
       username: json['username']?.toString(),
       avatarUrl: json['avatar_url']?.toString(),
-      likesCount: (json['likes_count'] as num?)?.toInt() ?? 0,
-      commentsCount: (json['comments_count'] as num?)?.toInt() ?? 0,
-      favoritesCount: (json['favorites_count'] as num?)?.toInt() ?? 0,
+      likesCount: _jsonIntNullable(json['likes_count']) ?? 0,
+      commentsCount: _jsonIntNullable(json['comments_count']) ?? 0,
+      favoritesCount: _jsonIntNullable(json['favorites_count']) ?? 0,
       tags: tags,
       isLiked: json['is_liked'] == true,
       isFavorited: json['is_favorited'] == true,
       latitude: _parseDouble(json['latitude']),
       longitude: _parseDouble(json['longitude']),
-      userId: (json['user_id'] as num?)?.toInt(),
+      userId: _jsonIntNullable(json['user_id']),
     );
+  }
+
+  /// 云函数/pg 序列化可能把 bigint 落成字符串，避免 `as num` 崩溃。
+  static int _jsonInt(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString()) ?? 0;
+  }
+
+  static int? _jsonIntNullable(dynamic v) {
+    if (v == null) return null;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v.toString());
   }
 
   static double? _parseDouble(dynamic v) {

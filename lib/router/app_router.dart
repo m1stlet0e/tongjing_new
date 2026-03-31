@@ -15,7 +15,7 @@ import 'package:tongjing/screens/edit_profile/edit_profile_screen.dart';
 import 'package:tongjing/screens/favorites/favorites_screen.dart';
 import 'package:tongjing/screens/home/home_screen.dart';
 import 'package:tongjing/screens/login/login_screen.dart';
-import 'package:tongjing/screens/map/map_screen.dart';
+import 'package:tongjing/screens/map/map_screen.dart' show MapOpenArgs, MapScreen;
 import 'package:tongjing/screens/my_equipment/my_equipment_screen.dart';
 import 'package:tongjing/screens/my_plans/my_plans_screen.dart';
 import 'package:tongjing/screens/my_spots/my_spots_screen.dart';
@@ -31,6 +31,18 @@ import 'package:tongjing/screens/static/account_security_screen.dart';
 import 'package:tongjing/screens/static/privacy_screen.dart';
 
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
+
+/// 全屏栈路由：无过渡动画，减少「点了要等一下才翻页」的体感延迟。
+CustomTransitionPage<void> _instantPage(GoRouterState state, Widget child) {
+  return CustomTransitionPage<void>(
+    key: state.pageKey,
+    child: child,
+    transitionDuration: Duration.zero,
+    reverseTransitionDuration: Duration.zero,
+    transitionsBuilder:
+        (context, animation, secondaryAnimation, child) => child,
+  );
+}
 
 GoRouter createAppRouter(AuthNotifier auth) {
   return GoRouter(
@@ -55,7 +67,12 @@ GoRouter createAppRouter(AuthNotifier auth) {
             routes: [
               GoRoute(
                 path: '/map',
-                builder: (context, state) => const MapScreen(),
+                builder: (context, state) {
+                  final extra = state.extra;
+                  return MapScreen(
+                    initialTarget: extra is MapOpenArgs ? extra : null,
+                  );
+                },
               ),
             ],
           ),
@@ -88,85 +105,96 @@ GoRouter createAppRouter(AuthNotifier auth) {
       GoRoute(
         path: '/login',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) => const LoginScreen(),
+        pageBuilder: (context, state) =>
+            _instantPage(state, const LoginScreen()),
       ),
       GoRoute(
         path: '/photo/:id',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) {
+        pageBuilder: (context, state) {
           final id = int.tryParse(state.pathParameters['id'] ?? '') ?? 0;
-          return PhotoDetailScreen(photoId: id);
+          return _instantPage(state, PhotoDetailScreen(photoId: id));
         },
       ),
       GoRoute(
         path: '/user/:id',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) {
+        pageBuilder: (context, state) {
           final id = int.tryParse(state.pathParameters['id'] ?? '') ?? 0;
-          return AuthorProfileScreen(userId: id);
+          return _instantPage(state, AuthorProfileScreen(userId: id));
         },
       ),
       GoRoute(
         path: '/settings',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) => const SettingsScreen(),
+        pageBuilder: (context, state) =>
+            _instantPage(state, const SettingsScreen()),
       ),
       GoRoute(
         path: '/edit-profile',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) => const EditProfileScreen(),
+        pageBuilder: (context, state) =>
+            _instantPage(state, const EditProfileScreen()),
       ),
       GoRoute(
         path: '/my-equipment',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) => const MyEquipmentScreen(),
+        pageBuilder: (context, state) =>
+            _instantPage(state, const MyEquipmentScreen()),
       ),
       GoRoute(
         path: '/privacy',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) => const PrivacyScreen(),
+        pageBuilder: (context, state) =>
+            _instantPage(state, const PrivacyScreen()),
       ),
       GoRoute(
         path: '/account-security',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) => const AccountSecurityScreen(),
+        pageBuilder: (context, state) =>
+            _instantPage(state, const AccountSecurityScreen()),
       ),
       GoRoute(
         path: '/about',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) => const AboutScreen(),
+        pageBuilder: (context, state) => _instantPage(state, const AboutScreen()),
       ),
       GoRoute(
         path: '/favorites',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) => const FavoritesScreen(),
+        pageBuilder: (context, state) =>
+            _instantPage(state, const FavoritesScreen()),
       ),
       GoRoute(
         path: '/my-works',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) => const MyWorksScreen(),
+        pageBuilder: (context, state) =>
+            _instantPage(state, const MyWorksScreen()),
       ),
       GoRoute(
         path: '/my-spots',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) => const MySpotsScreen(),
+        pageBuilder: (context, state) =>
+            _instantPage(state, const MySpotsScreen()),
       ),
       GoRoute(
         path: '/add-spot',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) => const AddSpotScreen(),
+        pageBuilder: (context, state) =>
+            _instantPage(state, const AddSpotScreen()),
       ),
       GoRoute(
         path: '/my-plans',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) => const MyPlansScreen(),
+        pageBuilder: (context, state) =>
+            _instantPage(state, const MyPlansScreen()),
       ),
       GoRoute(
         path: '/challenges',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) {
+        pageBuilder: (context, state) {
           final id = int.tryParse(state.uri.queryParameters['id'] ?? '');
-          return ChallengesScreen(challengeId: id);
+          return _instantPage(state, ChallengesScreen(challengeId: id));
         },
       ),
     ],

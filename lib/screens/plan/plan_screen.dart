@@ -212,11 +212,12 @@ class _PlanScreenState extends State<PlanScreen> {
   ///
   /// 方法：`_plansList`。
   Widget _plansList() {
-    final auth = context.watch<AuthNotifier>();
+    final isLoggedIn =
+        context.select<AuthNotifier, bool>((a) => a.isAuthenticated);
     if (_loadingPlans) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (!auth.isAuthenticated) {
+    if (!isLoggedIn) {
       return ListView(
         children: [
           const SizedBox(height: 120),

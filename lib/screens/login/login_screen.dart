@@ -11,8 +11,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:tongjing/config/app_config.dart';
+import 'package:tongjing/models/user_model.dart';
 import 'package:tongjing/providers/auth_provider.dart';
 import 'package:tongjing/services/api_service.dart';
+import 'package:tongjing/services/cloudbase_gate.dart';
+import 'package:tongjing/services/wechat_auth_gate.dart';
 import 'package:tongjing/theme/app_colors.dart';
 
 /// `LoginScreen`：页面组件，负责构建界面布局并响应用户操作。
@@ -35,6 +39,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Timer? _timer;
   bool _sending = false;
   bool _logging = false;
+  bool _wechatLogging = false;
   String? _hint;
 
   @override
@@ -59,7 +64,12 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _sending = true);
     try {
       final api = context.read<AuthNotifier>().api;
-      await api.authSendCode(phone);
+      String? devCode;
+      if (AppConfig.cloudbaseUseNativeAuth) {
+        await CloudbaseGate.sendPhoneOtp(phone);
+      } else {
+        devCode = await api.authSendCode(phone);
+      }
       if (!mounted) return;
       setState(() {
         _countdown = 60;
@@ -75,8 +85,12 @@ class _LoginScreenState extends State<LoginScreen> {
           setState(() => _countdown--);
         }
       });
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('验证码已发送')));
+      final msg = AppConfig.cloudbaseUseNativeAuth
+          ? '验证码已发送（CloudBase）'
+          : ((devCode != null && devCode.isNotEmpty)
+              ? '验证码已发送（开发码：$devCode）'
+              : '验证码已发送');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     } on ApiException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
@@ -108,7 +122,13 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _logging = true);
     try {
       final auth = context.read<AuthNotifier>();
-      final r = await auth.api.authLoginPhone(phone, code);
+      late final ({UserModel user, String token}) r;
+      if (AppConfig.cloudbaseUseNativeAuth) {
+        await CloudbaseGate.verifyPhoneOtp(code);
+        r = await auth.api.authLoginCloudbasePhone(phone);
+      } else {
+        r = await auth.api.authLoginPhone(phone, code);
+      }
       await auth.login(r.user, r.token);
       if (!mounted) return;
       context.go('/home');
@@ -124,6 +144,33 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } finally {
       if (mounted) setState(() => _logging = false);
+    }
+  }
+
+  Future<void> _wechatLogin() async {
+    if (_wechatLogging) return;
+    setState(() => _wechatLogging = true);
+    try {
+      final auth = context.read<AuthNotifier>();
+      final code = await WechatAuthGate.requestAuthCode();
+      final r = await auth.api.authLoginOauth(provider: 'wechat', code: code);
+      await auth.login(r.user, r.token);
+      if (!mounted) return;
+      context.go('/home');
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('微信登录失败：${e.message}')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('微信登录失败：$e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _wechatLogging = false);
     }
   }
 
@@ -223,9 +270,26 @@ class _LoginScreenState extends State<LoginScreen> {
                     )
                   : const Text('登录'),
             ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _wechatLogging ? null : _wechatLogin,
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              icon: _wechatLogging
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.wechat, color: Color(0xFF07C160)),
+              label: Text(_wechatLogging ? '微信登录中...' : '微信登录'),
+            ),
             const SizedBox(height: 24),
             const Text(
-              '开发环境：验证码见服务端控制台日志，或接口返回的 _dev_code 字段。',
+              AppConfig.cloudbaseUseNativeAuth
+                  ? '当前使用 CloudBase 原生短信验证码登录。'
+                  : '开发环境：点击“获取验证码”后会在提示里显示开发码。',
               style: TextStyle(fontSize: 11, color: AppColors.textMuted),
             ),
           ],

@@ -5,6 +5,8 @@
 //
 // 说明：该文件已补充中文注释，便于后续维护与交接。
 
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -41,17 +43,33 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _brandFilter;
   String? _lensFilter;
   String? _sceneFilter;
-  String? _apertureFilter;
+  /// `null` 全部；`low` ≤400；`mid` 401–3200；`high` &gt;3200（与后端 `iso_min`/`iso_max` 对应）。
+  String? _isoFilter;
 
   static const _brands = ['Sony', 'Canon', 'Nikon', '富士', 'Leica'];
   static const _lens = ['35mm', '50mm', '85mm', '24-70', '70-200'];
   static const _scenes = ['人像', '风光', '街拍', '建筑', '星空', '夜景'];
-  static const _apertures = ['<=2.8', '2.8-5.6', '>=5.6'];
+  static const _isoLabels = <String, String>{
+    'low': '低感光 (≤400)',
+    'mid': '中感光 (401–3200)',
+    'high': '高感光 (>3200)',
+  };
   static const _mockImage =
       'https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?auto=format&fit=crop&w=1200&q=80';
 
   /// 首页单次拉取条数（真实接口与分页判断一致）
   static const int _feedPageLimit = 32;
+
+  /// 避免快速切换 Tab 时旧请求覆盖新列表。
+  int _feedReqId = 0;
+
+  /// 各 Tab 上次成功加载的快照，用于切换时先展示再后台刷新。
+  final Map<String, List<PhotoListItem>> _photosByTab = {};
+  final Map<String, int> _pageByTab = {};
+  final Map<String, bool> _hasMoreByTab = {};
+
+  final Set<int> _likeBusy = {};
+  final Set<int> _favoriteBusy = {};
 
   @override
   /// 组件初始化阶段执行一次，用于准备首屏数据与监听器。
@@ -74,6 +92,9 @@ class _HomeScreenState extends State<HomeScreen> {
       _error = null;
       _page = 1;
       _hasMore = true;
+      _photosByTab.clear();
+      _pageByTab.clear();
+      _hasMoreByTab.clear();
     });
     await _loadPage(refresh: true);
   }
@@ -96,10 +117,12 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_loadingMore && !refresh) return;
     if (!_hasMore && !refresh) return;
 
+    final req = ++_feedReqId;
     if (!refresh) setState(() => _loadingMore = true);
 
     try {
       final page = refresh ? 1 : _page;
+      final isoRange = _isoQueryRange();
       final r = await auth.api.photosFeed(
         page: page,
         limit: _feedPageLimit,
@@ -107,7 +130,10 @@ class _HomeScreenState extends State<HomeScreen> {
         camera: _brandFilter,
         lens: _lensFilter,
         scene: _sceneFilter,
+        isoMin: isoRange.$1,
+        isoMax: isoRange.$2,
       );
+      if (!mounted || req != _feedReqId) return;
       setState(() {
         if (refresh) {
           _photos
@@ -122,7 +148,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _error = null;
       });
       final keyword = _search.text.trim().toLowerCase();
-      if (keyword.isNotEmpty) {
+      if (keyword.isNotEmpty && mounted && req == _feedReqId) {
         setState(() {
           _photos.retainWhere(
             (p) =>
@@ -132,16 +158,67 @@ class _HomeScreenState extends State<HomeScreen> {
           );
         });
       }
+      if (mounted && req == _feedReqId) {
+        _photosByTab[_uiTab] = List<PhotoListItem>.from(_photos);
+        _pageByTab[_uiTab] = _page;
+        _hasMoreByTab[_uiTab] = _hasMore;
+      }
     } catch (e) {
+      if (!mounted || req != _feedReqId) return;
       setState(() {
-        _error = e is ApiException ? e.message : '加载失败，请检查网络与后端服务';
+        _error = e is ApiException ? e.message : '加载失败：$e';
       });
     } finally {
-      setState(() {
+      if (mounted && req == _feedReqId) {
+        setState(() {
+          _loading = false;
+          _loadingMore = false;
+        });
+      }
+    }
+  }
+
+  void _switchUiTab(String key) {
+    if (_uiTab == key) return;
+    final cached = _photosByTab[key];
+    setState(() {
+      _uiTab = key;
+      if (cached != null) {
+        _photos
+          ..clear()
+          ..addAll(cached);
+        _page = _pageByTab[key] ?? 2;
+        _hasMore = _hasMoreByTab[key] ?? true;
         _loading = false;
         _loadingMore = false;
-      });
-    }
+        _error = null;
+      } else {
+        _loading = true;
+        _photos.clear();
+        _page = 1;
+        _hasMore = true;
+        _error = null;
+      }
+    });
+    unawaited(_loadPage(refresh: true));
+  }
+
+  Future<void> _afterReturnFromDetail(int photoId) async {
+    if (AppConfig.useMockData || !mounted) return;
+    final auth = context.read<AuthNotifier>();
+    if (!auth.isAuthenticated) return;
+    try {
+      final d = await auth.api.photoDetail(photoId);
+      if (!mounted) return;
+      _replacePhotoInList(photoId, d);
+      final snap = _photosByTab[_uiTab];
+      if (snap != null) {
+        final i = snap.indexWhere((x) => x.id == photoId);
+        if (i >= 0) {
+          snap[i] = d;
+        }
+      }
+    } catch (_) {}
   }
 
   /// 执行业务流程并返回该流程的处理结果。
@@ -155,7 +232,7 @@ class _HomeScreenState extends State<HomeScreen> {
         String? b = _brandFilter;
         String? l = _lensFilter;
         String? s = _sceneFilter;
-        String? a = _apertureFilter;
+        String? iso = _isoFilter;
         return StatefulBuilder(
           builder: (context, setModal) {
             return Padding(
@@ -232,7 +309,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  const Text('光圈区间',
+                  const Text('ISO 感光度',
                       style:
                           TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
                   Wrap(
@@ -240,14 +317,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     children: [
                       ChoiceChip(
                         label: const Text('全部'),
-                        selected: a == null,
-                        onSelected: (_) => setModal(() => a = null),
+                        selected: iso == null,
+                        onSelected: (_) => setModal(() => iso = null),
                       ),
-                      ..._apertures.map(
+                      ..._isoLabels.entries.map(
                         (e) => ChoiceChip(
-                          label: Text(e),
-                          selected: a == e,
-                          onSelected: (_) => setModal(() => a = e),
+                          label: Text(e.value),
+                          selected: iso == e.key,
+                          onSelected: (_) => setModal(() => iso = e.key),
                         ),
                       ),
                     ],
@@ -261,7 +338,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           _brandFilter = b;
                           _lensFilter = l;
                           _sceneFilter = s;
-                          _apertureFilter = a;
+                          _isoFilter = iso;
                         });
                         Navigator.pop(ctx);
                         _refresh();
@@ -286,7 +363,8 @@ class _HomeScreenState extends State<HomeScreen> {
   ///
   /// 方法：`build`。
   Widget build(BuildContext context) {
-    final auth = context.watch<AuthNotifier>();
+    final isLoggedIn =
+        context.select<AuthNotifier, bool>((a) => a.isAuthenticated);
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -349,7 +427,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: RefreshIndicator(
                 color: AppColors.kleinBlue,
                 onRefresh: _refresh,
-                child: _buildBody(auth),
+                child: _buildBody(isLoggedIn),
               ),
             ),
           ],
@@ -365,11 +443,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final on = _uiTab == key;
     return Expanded(
       child: InkWell(
-        onTap: () {
-          if (_uiTab == key) return;
-          setState(() => _uiTab = key);
-          _refresh();
-        },
+        onTap: () => _switchUiTab(key),
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
@@ -396,8 +470,8 @@ class _HomeScreenState extends State<HomeScreen> {
   /// 执行业务流程并返回该流程的处理结果。
   ///
   /// 方法：`_buildBody`。
-  Widget _buildBody(AuthNotifier auth) {
-    final shown = _applyApertureFilter(_photos);
+  Widget _buildBody(bool isLoggedIn) {
+    final shown = _photos;
     if (_loading && _photos.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -426,7 +500,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 28),
               child: Text(
-                auth.isAuthenticated
+                isLoggedIn
                     ? '关注页暂无动态。你可先去「推荐」浏览作品，在作者主页点击「+ 关注」；演示环境需种子数据中为演示账号写入关注关系。'
                     : '登录后可查看已关注摄影师的最新作品。',
                 textAlign: TextAlign.center,
@@ -437,14 +511,14 @@ class _HomeScreenState extends State<HomeScreen> {
             Center(
               child: FilledButton(
                 onPressed: () {
-                  if (auth.isAuthenticated) {
+                  if (isLoggedIn) {
                     _refresh();
                   } else {
                     context.push('/login');
                   }
                 },
                 style: FilledButton.styleFrom(backgroundColor: AppColors.kleinBlue),
-                child: Text(auth.isAuthenticated ? '刷新试试' : '去登录'),
+                child: Text(isLoggedIn ? '刷新试试' : '去登录'),
               ),
             ),
           ],
@@ -492,18 +566,20 @@ class _HomeScreenState extends State<HomeScreen> {
                     return const Center(child: CircularProgressIndicator());
                   }
                   final p = shown[index];
-                  return _PhotoTile(
+                  return RepaintBoundary(
+                    child: _PhotoTile(
                     item: p,
                     interactionsEnabled: !AppConfig.useMockData,
                     onOpenDetail: () async {
                       await context.push('/photo/${p.id}');
-                      if (mounted) await _refresh();
+                      if (mounted) await _afterReturnFromDetail(p.id);
                     },
                     onOpenAuthor: (p.userId != null && p.userId! > 0)
                         ? () => context.push('/user/${p.userId}')
                         : null,
                     onToggleLike: () => _toggleLikeOnTile(p.id),
                     onToggleFavorite: () => _toggleFavoriteOnTile(p.id),
+                  ),
                   );
                 },
                 childCount: shown.length + (_loadingMore ? 1 : 0),
@@ -515,29 +591,29 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  List<PhotoListItem> _applyApertureFilter(List<PhotoListItem> input) {
-    final f = _apertureFilter;
-    if (f == null) return input;
-    return input.where((p) {
-      final value = _parseAperture(p.aperture);
-      if (value == null) return false;
-      if (f == '<=2.8') return value <= 2.8;
-      if (f == '2.8-5.6') return value > 2.8 && value <= 5.6;
-      if (f == '>=5.6') return value >= 5.6;
-      return true;
-    }).toList();
-  }
-
-  double? _parseAperture(String? text) {
-    if (text == null || text.isEmpty) return null;
-    final cleaned = text.replaceAll(RegExp(r'[^0-9.]'), '');
-    return double.tryParse(cleaned);
+  /// 与筛选 chips 对应的后端 `iso_min` / `iso_max`；无筛选时为 (null, null)。
+  (int?, int?) _isoQueryRange() {
+    switch (_isoFilter) {
+      case 'low':
+        return (null, 400);
+      case 'mid':
+        return (401, 3200);
+      case 'high':
+        return (3201, null);
+      default:
+        return (null, null);
+    }
   }
 
   void _replacePhotoInList(int photoId, PhotoListItem next) {
     final idx = _photos.indexWhere((x) => x.id == photoId);
     if (idx < 0 || !mounted) return;
     setState(() => _photos[idx] = next);
+    final cached = _photosByTab[_uiTab];
+    if (cached != null) {
+      final j = cached.indexWhere((x) => x.id == photoId);
+      if (j >= 0) cached[j] = next;
+    }
   }
 
   Future<void> _toggleLikeOnTile(int photoId) async {
@@ -547,24 +623,37 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) context.push('/login');
       return;
     }
+    if (_likeBusy.contains(photoId)) return;
     final idx = _photos.indexWhere((x) => x.id == photoId);
     if (idx < 0) return;
-    final old = _photos[idx];
+    final before = _photos[idx];
+    final optimistic = before.copyWith(
+      isLiked: !before.isLiked,
+      likesCount:
+          (before.likesCount + (before.isLiked ? -1 : 1)).clamp(0, 1 << 30),
+    );
+    _likeBusy.add(photoId);
+    _replacePhotoInList(photoId, optimistic);
     try {
       final liked = await auth.api.photoToggleLike(photoId);
       if (!mounted) return;
-      final delta = liked == old.isLiked ? 0 : (liked ? 1 : -1);
+      var count = before.likesCount;
+      if (liked && !before.isLiked) count++;
+      if (!liked && before.isLiked) count--;
       _replacePhotoInList(
         photoId,
-        old.copyWith(
+        before.copyWith(
           isLiked: liked,
-          likesCount: (old.likesCount + delta).clamp(0, 1 << 30),
+          likesCount: count.clamp(0, 1 << 30),
         ),
       );
     } on ApiException catch (e) {
+      _replacePhotoInList(photoId, before);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
       }
+    } finally {
+      _likeBusy.remove(photoId);
     }
   }
 
@@ -575,24 +664,37 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) context.push('/login');
       return;
     }
+    if (_favoriteBusy.contains(photoId)) return;
     final idx = _photos.indexWhere((x) => x.id == photoId);
     if (idx < 0) return;
-    final old = _photos[idx];
+    final before = _photos[idx];
+    final optimistic = before.copyWith(
+      isFavorited: !before.isFavorited,
+      favoritesCount: (before.favoritesCount + (before.isFavorited ? -1 : 1))
+          .clamp(0, 1 << 30),
+    );
+    _favoriteBusy.add(photoId);
+    _replacePhotoInList(photoId, optimistic);
     try {
       final fav = await auth.api.photoToggleFavorite(photoId);
       if (!mounted) return;
-      final delta = fav == old.isFavorited ? 0 : (fav ? 1 : -1);
+      var count = before.favoritesCount;
+      if (fav && !before.isFavorited) count++;
+      if (!fav && before.isFavorited) count--;
       _replacePhotoInList(
         photoId,
-        old.copyWith(
+        before.copyWith(
           isFavorited: fav,
-          favoritesCount: (old.favoritesCount + delta).clamp(0, 1 << 30),
+          favoritesCount: count.clamp(0, 1 << 30),
         ),
       );
     } on ApiException catch (e) {
+      _replacePhotoInList(photoId, before);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
       }
+    } finally {
+      _favoriteBusy.remove(photoId);
     }
   }
 

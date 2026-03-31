@@ -84,8 +84,9 @@ class _MyPlansScreenState extends State<MyPlansScreen> {
   ///
   /// 方法：`build`。
   Widget build(BuildContext context) {
-    final auth = context.watch<AuthNotifier>();
-    if (!auth.isAuthenticated) {
+    final isLoggedIn =
+        context.select<AuthNotifier, bool>((a) => a.isAuthenticated);
+    if (!isLoggedIn) {
       return Scaffold(
         appBar: AppBar(title: const Text('我的计划')),
         body: Center(

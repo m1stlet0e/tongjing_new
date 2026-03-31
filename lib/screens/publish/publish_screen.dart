@@ -259,7 +259,15 @@ class _PublishScreenState extends State<PublishScreen> {
       });
     } on ApiException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            action: SnackBarAction(
+              label: '重试',
+              onPressed: () => _publish(),
+            ),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _busy = false);

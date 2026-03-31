@@ -31,6 +31,9 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   UserModel? _profile;
   List<PhotoListItem> _photos = [];
+  List<Map<String, dynamic>> _gear = [];
+  List<Map<String, dynamic>> _footprintRows = [];
+  List<PhotoListItem> _favoritePhotos = [];
   bool _loading = true;
   int _contentTab = 0;
 
@@ -47,20 +50,48 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final auth = context.read<AuthNotifier>();
     if (!auth.isAuthenticated) return;
     setState(() => _loading = true);
+    UserModel? me;
     try {
-      final me = await auth.api.usersMe();
-      final my = await auth.api.photosMy(limit: 60);
-      setState(() {
-        _profile = me;
-        _photos = my.photos;
-      });
+      me = await auth.api.usersMe();
     } on ApiException catch (_) {
-      setState(() => _profile = auth.user);
+      me = auth.user;
     } catch (_) {
-      setState(() => _profile = auth.user);
-    } finally {
-      if (mounted) setState(() => _loading = false);
+      me = auth.user;
     }
+    if (me == null) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
+
+    List<PhotoListItem> photos = [];
+    List<Map<String, dynamic>> gear = [];
+    List<Map<String, dynamic>> fp = [];
+    List<PhotoListItem> favs = [];
+    try {
+      final my = await auth.api.photosMy(limit: 60);
+      photos = my.photos;
+    } catch (_) {}
+
+    try {
+      gear = await auth.api.equipmentForUser(me.id);
+    } catch (_) {}
+    try {
+      fp = await auth.api.usersFootprint(me.id);
+    } catch (_) {}
+    try {
+      final fr = await auth.api.photosFavorites(limit: 60);
+      favs = fr.photos;
+    } catch (_) {}
+
+    if (!mounted) return;
+    setState(() {
+      _profile = me;
+      _photos = photos;
+      _gear = gear;
+      _footprintRows = fp;
+      _favoritePhotos = favs;
+      _loading = false;
+    });
   }
 
   Future<void> _logout() async {
@@ -85,9 +116,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
   ///
   /// 方法：`build`。
   Widget build(BuildContext context) {
-    final auth = context.watch<AuthNotifier>();
+    final canViewProfile =
+        context.select<AuthNotifier, bool>((a) => a.isAuthenticated);
+    final sessionUser =
+        context.select<AuthNotifier, UserModel?>((a) => a.user);
 
-    if (!auth.isAuthenticated) {
+    if (!canViewProfile) {
       return Scaffold(
         backgroundColor: AppColors.background,
         body: SafeArea(
@@ -124,7 +158,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
     }
 
-    final u = _profile ?? auth.user!;
+    final u = _profile ?? sessionUser!;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -194,7 +228,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 _stat('获赞', u.photosCount ?? _photos.length, light: true),
                                 _stat('粉丝', u.followersCount ?? 0, light: true),
                                 _stat('关注', u.followingCount ?? 0, light: true),
-                                _stat('机位', (_photos.length * 1.2).toInt(), light: true),
+                                _stat('地点', _footprintRows.length, light: true),
                               ],
                             ),
                           ],
@@ -211,14 +245,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       const SizedBox(height: 10),
                       SizedBox(
                         height: 96,
-                        child: ListView(
-                          scrollDirection: Axis.horizontal,
-                          children: const [
-                            _GearCard(title: 'Sony A7R5', type: '机身'),
-                            _GearCard(title: 'FE 16-35mm', type: '镜头'),
-                            _GearCard(title: 'FE 50mm F1.4', type: '镜头'),
-                          ],
-                        ),
+                        child: _gear.isEmpty
+                            ? Center(
+                                child: TextButton.icon(
+                                  onPressed: () async {
+                                    await context.push('/my-equipment');
+                                    if (mounted) _load();
+                                  },
+                                  icon: const Icon(Icons.add_circle_outline,
+                                      color: AppColors.kleinBlue),
+                                  label: const Text('添加防潮箱装备'),
+                                ),
+                              )
+                            : ListView.builder(
+                                scrollDirection: Axis.horizontal,
+                                itemCount: _gear.length,
+                                itemBuilder: (context, i) {
+                                  final e = _gear[i];
+                                  final brand = e['brand']?.toString() ?? '';
+                                  final model = e['model']?.toString() ?? '';
+                                  final title = '$brand $model'.trim();
+                                  final type = e['type']?.toString() ?? '';
+                                  return _GearCard(title: title.isEmpty ? '器材' : title, type: type);
+                                },
+                              ),
                       ),
                       const SizedBox(height: 16),
                       Row(
@@ -248,38 +298,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
               ),
-              if (_contentTab == 1)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Container(
-                      height: 180,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.borderLight),
-                      ),
-                      child: const Center(
-                        child: Text('足迹地图（即将接入真实点亮数据）'),
-                      ),
-                    ),
-                  ),
-                )
-              else if (_contentTab == 2)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Container(
-                      height: 180,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.borderLight),
-                      ),
-                      child: const Center(child: Text('收藏灵感文件夹（开发中）')),
-                    ),
-                  ),
-                )
+              if (_contentTab == 1) ..._footprintSlivers(context)
+              else if (_contentTab == 2) ..._favoritesSlivers(context)
               else if (_photos.isEmpty)
                 const SliverToBoxAdapter(
                   child: Padding(
@@ -359,6 +379,209 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ],
       ),
     );
+  }
+
+  List<Widget> _footprintSlivers(BuildContext context) {
+    if (_footprintRows.isEmpty) {
+      return [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.borderLight),
+              ),
+              child: Column(
+                children: [
+                  const Text(
+                    '发布作品时填写地点与经纬度后，会按地点聚合展示在这里。',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: AppColors.textMuted),
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () => context.push('/map'),
+                    child: const Text('去地图看看'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ];
+    }
+    return [
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+        sliver: SliverToBoxAdapter(
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () => context.push('/map'),
+              child: const Text('在地图中查看'),
+            ),
+          ),
+        ),
+      ),
+      SliverPadding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        sliver: SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (context, i) {
+              final row = _footprintRows[i];
+              final name = row['location_name']?.toString() ?? '未命名地点';
+              final cnt = (row['photo_count'] as num?)?.toInt() ?? 0;
+              final photos = row['photos'] as List<dynamic>? ?? [];
+              return Card(
+                margin: const EdgeInsets.only(bottom: 10),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.place, color: AppColors.kleinBlue, size: 20),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              name,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            '$cnt 张',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (photos.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          height: 56,
+                          child: ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: photos.length.clamp(0, 6),
+                            separatorBuilder: (_, __) => const SizedBox(width: 6),
+                            itemBuilder: (context, j) {
+                              final ph = photos[j] as Map<String, dynamic>;
+                              final id = (ph['id'] as num?)?.toInt() ?? 0;
+                              final url = ph['image_url']?.toString() ?? '';
+                              return GestureDetector(
+                                onTap: () {
+                                  if (id > 0) context.push('/photo/$id');
+                                },
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: CachedNetworkImage(
+                                    imageUrl: url,
+                                    width: 56,
+                                    height: 56,
+                                    fit: BoxFit.cover,
+                                    errorWidget: (_, __, ___) => Container(
+                                      width: 56,
+                                      height: 56,
+                                      color: AppColors.borderLight,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              );
+            },
+            childCount: _footprintRows.length,
+          ),
+        ),
+      ),
+    ];
+  }
+
+  List<Widget> _favoritesSlivers(BuildContext context) {
+    if (_favoritePhotos.isEmpty) {
+      return [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.borderLight),
+              ),
+              child: Column(
+                children: [
+                  const Text(
+                    '暂无收藏作品',
+                    style: TextStyle(color: AppColors.textMuted),
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: () => context.push('/favorites'),
+                    style: FilledButton.styleFrom(backgroundColor: AppColors.kleinBlue),
+                    child: const Text('浏览全部收藏'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ];
+    }
+    return [
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+        sliver: SliverToBoxAdapter(
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () => context.push('/favorites'),
+              child: const Text('收藏夹'),
+            ),
+          ),
+        ),
+      ),
+      SliverPadding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        sliver: SliverGrid(
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+            mainAxisSpacing: 6,
+            crossAxisSpacing: 6,
+            childAspectRatio: 1,
+          ),
+          delegate: SliverChildBuilderDelegate(
+            (context, i) {
+              if (i >= _favoritePhotos.length) return null;
+              final p = _favoritePhotos[i];
+              return GestureDetector(
+                onTap: () => context.push('/photo/${p.id}'),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: CachedNetworkImage(imageUrl: p.imageUrl, fit: BoxFit.cover),
+                ),
+              );
+            },
+            childCount: _favoritePhotos.length,
+          ),
+        ),
+      ),
+    ];
   }
 
   Widget _contentChip(String label, int i) {
@@ -454,6 +677,17 @@ class _GearCard extends StatelessWidget {
   final String title;
   final String type;
 
+  static IconData iconForType(String type) {
+    final t = type.toLowerCase();
+    if (t.contains('镜') || t.contains('lens')) {
+      return Icons.camera_outlined;
+    }
+    if (t.contains('身') || t.contains('body') || t.contains('camera')) {
+      return Icons.camera_alt;
+    }
+    return Icons.precision_manufacturing_outlined;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -470,7 +704,7 @@ class _GearCard extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            type == '机身' ? Icons.camera_alt : Icons.camera_outlined,
+            _GearCard.iconForType(type),
             color: AppColors.kleinBlue,
           ),
           const SizedBox(height: 8),

@@ -57,6 +57,14 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "1.1.2"
+  cloudbase_flutter:
+    dependency: "direct main"
+    description:
+      name: cloudbase_flutter
+      sha256: "2ee5293a13d93ebfe1cf9b85f3c37d0677fc7fa4a12f4c035f6a26866daa3973"
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "1.0.7"
   code_assets:
     dependency: transitive
     description:
@@ -105,6 +113,22 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "1.2.0"
+  dio:
+    dependency: transitive
+    description:
+      name: dio
+      sha256: aff32c08f92787a557dd5c0145ac91536481831a01b4648136373cddb0e64f8c
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "5.9.2"
+  dio_web_adapter:
+    dependency: transitive
+    description:
+      name: dio_web_adapter
+      sha256: "2f9e64323a7c3c7ef69567d5c800424a11f8337b8b228bad02524c9fb3c1f340"
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "2.1.2"
   fake_async:
     dependency: transitive
     description:
@@ -216,6 +240,14 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  fluwx:
+    dependency: "direct main"
+    description:
+      name: fluwx
+      sha256: "7e92d2000ee49c5262a88c51ea2d22b91a753d5b29df27cc264bb0a115d65373"
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "5.7.5"
   geolocator:
     dependency: "direct main"
     description:

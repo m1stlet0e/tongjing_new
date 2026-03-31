@@ -57,8 +57,9 @@ class _MySpotsScreenState extends State<MySpotsScreen> {
   ///
   /// 方法：`build`。
   Widget build(BuildContext context) {
-    final auth = context.watch<AuthNotifier>();
-    if (!auth.isAuthenticated) {
+    final isLoggedIn =
+        context.select<AuthNotifier, bool>((a) => a.isAuthenticated);
+    if (!isLoggedIn) {
       return Scaffold(
         appBar: AppBar(title: const Text('我的机位')),
         body: Center(
@@ -146,7 +147,10 @@ class _MySpotsScreenState extends State<MySpotsScreen> {
                                 );
                                 if (ok == true) {
                                   try {
-                                    await auth.api.spotsUnlink(id);
+                                    await context
+                                        .read<AuthNotifier>()
+                                        .api
+                                        .spotsUnlink(id);
                                     await _load();
                                   } catch (e) {
                                     if (context.mounted) {

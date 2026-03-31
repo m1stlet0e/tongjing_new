@@ -54,8 +54,10 @@ class _MainShellState extends State<MainShell> {
         body: widget.navigationShell,
         bottomNavigationBar: Theme(
           data: Theme.of(context).copyWith(
+            splashFactory: NoSplash.splashFactory,
             splashColor: Colors.transparent,
             highlightColor: Colors.transparent,
+            hoverColor: Colors.transparent,
           ),
           child: Container(
             decoration: const BoxDecoration(

@@ -11,10 +11,18 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tongjing/providers/auth_provider.dart';
 import 'package:tongjing/router/app_router.dart';
+import 'package:tongjing/services/cloudbase_gate.dart';
+import 'package:tongjing/services/wechat_auth_gate.dart';
 import 'package:tongjing/theme/app_colors.dart';
+import 'package:tongjing/config/app_config.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await CloudbaseGate.ensureInitialized();
+  await WechatAuthGate.ensureInitialized();
+  debugPrint(
+    'CloudBase init status: env=${AppConfig.cloudbaseEnvId}, appReady=${CloudbaseGate.app != null}, error=${CloudbaseGate.lastInitError}',
+  );
   final prefs = await SharedPreferences.getInstance();
   final auth = AuthNotifier(prefs);
   await auth.init();
@@ -51,6 +59,11 @@ class TongjingApp extends StatelessWidget {
             primary: AppColors.kleinBlue,
           ),
           useMaterial3: true,
+          // 去掉水波纹等待，点击后 UI 立即反馈（仍保留 onPressed 逻辑）。
+          splashFactory: NoSplash.splashFactory,
+          splashColor: Colors.transparent,
+          highlightColor: Colors.transparent,
+          hoverColor: Colors.transparent,
           appBarTheme: const AppBarTheme(
             centerTitle: true,
             elevation: 0,

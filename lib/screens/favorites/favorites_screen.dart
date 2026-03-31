@@ -58,8 +58,9 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   ///
   /// 方法：`build`。
   Widget build(BuildContext context) {
-    final auth = context.watch<AuthNotifier>();
-    if (!auth.isAuthenticated) {
+    final isLoggedIn =
+        context.select<AuthNotifier, bool>((a) => a.isAuthenticated);
+    if (!isLoggedIn) {
       return Scaffold(
         appBar: AppBar(title: const Text('收藏')),
         body: Center(

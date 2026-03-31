@@ -1,5 +1,5 @@
 name: tongjing
-description: "同镜 - 摄影社区 Flutter 客户端（对接原 Expo 项目 Express API）"
+description: "同镜 - 摄影社区 Flutter 客户端（CloudBase 云函数 + PostgreSQL 后端）"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -43,6 +43,9 @@ dependencies:
   flutter_map: ^7.0.2
   latlong2: ^0.9.1
   intl: ^0.20.2
+  # 腾讯云 CloudBase（可选）：配置 CLOUDBASE_ENV_ID 后在 main 中初始化，见 lib/services/cloudbase_gate.dart
+  cloudbase_flutter: ^1.0.7
+  fluwx: ^5.4.3
 
 dev_dependencies:
   flutter_test:
