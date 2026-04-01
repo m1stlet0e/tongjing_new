@@ -19,7 +19,9 @@ import 'package:tongjing/config/app_config.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await CloudbaseGate.ensureInitialized();
-  await WechatAuthGate.ensureInitialized();
+  if (AppConfig.enableWechatLogin) {
+    await WechatAuthGate.ensureInitialized();
+  }
   debugPrint(
     'CloudBase init status: env=${AppConfig.cloudbaseEnvId}, appReady=${CloudbaseGate.app != null}, error=${CloudbaseGate.lastInitError}',
   );

@@ -31,6 +31,7 @@ class SettingsScreen extends StatelessWidget {
         children: [
           _tile(context, '编辑资料', () => context.push('/edit-profile')),
           _tile(context, '我的器材', () => context.push('/my-equipment')),
+          _tile(context, '用户协议', () => context.push('/terms')),
           _tile(context, '隐私政策', () => context.push('/privacy')),
           _tile(context, '账号与安全', () => context.push('/account-security')),
           _tile(context, '关于同镜', () => context.push('/about')),

@@ -18,14 +18,8 @@ class AppConfig {
   static String get apiBaseUrl =>
       _apiBaseUrlEnv.isNotEmpty ? _apiBaseUrlEnv : impl.defaultApiBaseUrl();
 
-  /// 是否启用本地 Mock 数据。
-  ///
-  /// 使用方式：
-  /// `flutter run --dart-define=USE_MOCK_DATA=true`
-  static const bool useMockData = bool.fromEnvironment(
-    'USE_MOCK_DATA',
-    defaultValue: false,
-  );
+  /// 强制关闭本地 Mock 数据，所有页面统一走真实后端数据。
+  static const bool useMockData = false;
 
   /// 地图底图 XYZ 模板，需含 `{z}`、`{x}`、`{y}`。
   ///
@@ -70,6 +64,13 @@ class AppConfig {
     defaultValue: true,
   );
 
+  /// 是否启用微信登录（需微信开放平台移动应用审核通过并配置 AppID）。
+  /// 默认关闭；临上架时加 `--dart-define=ENABLE_WECHAT_LOGIN=true` 再打开。
+  static const bool enableWechatLogin = bool.fromEnvironment(
+    'ENABLE_WECHAT_LOGIN',
+    defaultValue: false,
+  );
+
   /// 微信开放平台 AppID（用于原生微信授权登录）。
   static const String wechatOpenAppId = String.fromEnvironment(
     'WECHAT_OPEN_APP_ID',
@@ -81,4 +82,35 @@ class AppConfig {
     'WECHAT_UNIVERSAL_LINK',
     defaultValue: '',
   );
+
+  /// 官网根地址（HTTPS，无末尾斜杠），用于应用内跳转《隐私政策》《用户协议》完整版。
+  /// 示例：`https://你的环境.tcloudbaseapp.com` 托管的 landing 根路径。
+  static const String legalSiteBase = String.fromEnvironment(
+    'LEGAL_SITE_BASE',
+    defaultValue: '',
+  );
+
+  static String get _legalBaseNormalized {
+    final s = legalSiteBase.trim();
+    if (s.isEmpty) return '';
+    return s.endsWith('/') ? s.substring(0, s.length - 1) : s;
+  }
+
+  static Uri? get legalPrivacyUri {
+    final b = _legalBaseNormalized;
+    if (b.isEmpty) return null;
+    return Uri.parse('$b/privacy.html');
+  }
+
+  static Uri? get legalTermsUri {
+    final b = _legalBaseNormalized;
+    if (b.isEmpty) return null;
+    return Uri.parse('$b/terms.html');
+  }
+
+  static Uri? get legalHomeUri {
+    final b = _legalBaseNormalized;
+    if (b.isEmpty) return null;
+    return Uri.parse('$b/index.html');
+  }
 }

@@ -13,7 +13,10 @@ import 'package:tongjing/models/photo_models.dart';
 import 'package:tongjing/models/user_model.dart';
 import 'package:tongjing/providers/auth_provider.dart';
 import 'package:tongjing/services/api_service.dart';
+import 'package:tongjing/router/photo_gallery_extra.dart';
 import 'package:tongjing/theme/app_colors.dart';
+import 'package:tongjing/utils/remote_image.dart';
+import 'package:tongjing/widgets/gear_card.dart';
 
 /// `ProfileScreen`：页面组件，负责构建界面布局并响应用户操作。
 ///
@@ -92,6 +95,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _favoritePhotos = favs;
       _loading = false;
     });
+  }
+
+  Future<void> _openPhotoInGallery(List<PhotoListItem> source, PhotoListItem p) async {
+    final ids = dedupePhotoIdsInOrder(source.map((e) => e.id));
+    final ix = ids.indexOf(p.id);
+    final router = GoRouter.of(context);
+    final dynamic r = ids.length > 1
+        ? await router.push(
+            '/photo/${p.id}',
+            extra: PhotoGalleryExtra(
+              photoIds: ids,
+              initialIndex: ix >= 0 ? ix : 0,
+            ),
+          )
+        : await router.push('/photo/${p.id}');
+    if (!context.mounted) return;
+    if (r == true) await _load();
   }
 
   Future<void> _logout() async {
@@ -222,13 +242,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               style: const TextStyle(color: Color(0xFFDDE3F6)),
                             ),
                             const SizedBox(height: 16),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            Wrap(
+                              alignment: WrapAlignment.spaceEvenly,
+                              runSpacing: 10,
+                              spacing: 4,
                               children: [
-                                _stat('获赞', u.photosCount ?? _photos.length, light: true),
-                                _stat('粉丝', u.followersCount ?? 0, light: true),
-                                _stat('关注', u.followingCount ?? 0, light: true),
-                                _stat('地点', _footprintRows.length, light: true),
+                                _stat(
+                                  '赞过',
+                                  u.myLikesCount ?? 0,
+                                  light: true,
+                                  tappable: true,
+                                  onTap: () => context.push('/my-liked-photos'),
+                                ),
+                                _stat(
+                                  '粉丝',
+                                  u.followersCount ?? 0,
+                                  light: true,
+                                  tappable: true,
+                                  onTap: () => context.push('/my-followers'),
+                                ),
+                                _stat(
+                                  '关注',
+                                  u.followingCount ?? 0,
+                                  light: true,
+                                  tappable: true,
+                                  onTap: () => context.push('/my-following'),
+                                ),
+                                _stat(
+                                  '地点',
+                                  _footprintRows.length,
+                                  light: true,
+                                  tappable: true,
+                                  onTap: () => context.go('/map'),
+                                ),
                               ],
                             ),
                           ],
@@ -266,18 +312,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   final model = e['model']?.toString() ?? '';
                                   final title = '$brand $model'.trim();
                                   final type = e['type']?.toString() ?? '';
-                                  return _GearCard(title: title.isEmpty ? '器材' : title, type: type);
+                                  return GearCard(title: title.isEmpty ? '器材' : title, type: type);
                                 },
                               ),
-                      ),
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          Expanded(child: _action(Icons.favorite_border, '收藏', () => context.push('/favorites'))),
-                          Expanded(child: _action(Icons.calendar_today_outlined, '计划', () => context.push('/my-plans'))),
-                          Expanded(child: _action(Icons.map_outlined, '机位', () => context.push('/my-spots'))),
-                          Expanded(child: _action(Icons.emoji_events_outlined, '挑战', () => context.push('/challenges'))),
-                        ],
                       ),
                       const SizedBox(height: 20),
                       Row(
@@ -322,10 +359,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         if (i >= _photos.length) return null;
                         final p = _photos[i];
                         return GestureDetector(
-                          onTap: () => context.push('/photo/${p.id}'),
+                          onTap: () => _openPhotoInGallery(_photos, p),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(4),
-                            child: CachedNetworkImage(imageUrl: p.imageUrl, fit: BoxFit.cover),
+                            child: CachedNetworkImage(
+                              imageUrl: p.imageUrl,
+                              fit: BoxFit.cover,
+                              httpHeaders: kRemoteImageHttpHeaders,
+                            ),
                           ),
                         );
                       },
@@ -343,40 +384,62 @@ class _ProfileScreenState extends State<ProfileScreen> {
   /// 执行业务流程并返回该流程的处理结果。
   ///
   /// 方法：`_stat`。
-  Widget _stat(String label, int v, {bool light = false}) {
-    return Column(
+  Widget _stat(
+    String label,
+    int v, {
+    bool light = false,
+    bool tappable = false,
+    VoidCallback? onTap,
+  }) {
+    final valueStyle = TextStyle(
+      fontSize: 18,
+      fontWeight: FontWeight.w600,
+      color: light ? Colors.white : AppColors.textPrimary,
+    );
+    final labelStyle = TextStyle(
+      fontSize: 11,
+      color: light ? const Color(0xFFDDE3F6) : AppColors.textMuted,
+    );
+    final col = Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          '$v',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: light ? Colors.white : AppColors.textPrimary,
-          ),
-        ),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            color: light ? const Color(0xFFDDE3F6) : AppColors.textMuted,
-          ),
+        Text('$v', style: valueStyle),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                style: labelStyle,
+              ),
+            ),
+            if (tappable && onTap != null)
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 14,
+                color: light ? const Color(0x88FFFFFF) : AppColors.textMuted,
+              ),
+          ],
         ),
       ],
     );
-  }
-
-  /// 执行业务流程并返回该流程的处理结果。
-  ///
-  /// 方法：`_action`。
-  Widget _action(IconData icon, String label, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      child: Column(
-        children: [
-          Icon(icon, color: AppColors.kleinBlue),
-          const SizedBox(height: 4),
-          Text(label, style: const TextStyle(fontSize: 11)),
-        ],
+    if (onTap == null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        child: col,
+      );
+    }
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+          child: col,
+        ),
       ),
     );
   }
@@ -484,6 +547,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   borderRadius: BorderRadius.circular(6),
                                   child: CachedNetworkImage(
                                     imageUrl: url,
+                                    httpHeaders: kRemoteImageHttpHeaders,
                                     width: 56,
                                     height: 56,
                                     fit: BoxFit.cover,
@@ -570,10 +634,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
               if (i >= _favoritePhotos.length) return null;
               final p = _favoritePhotos[i];
               return GestureDetector(
-                onTap: () => context.push('/photo/${p.id}'),
+                onTap: () => _openPhotoInGallery(_favoritePhotos, p),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(4),
-                  child: CachedNetworkImage(imageUrl: p.imageUrl, fit: BoxFit.cover),
+                  child: CachedNetworkImage(
+                    imageUrl: p.imageUrl,
+                    fit: BoxFit.cover,
+                    httpHeaders: kRemoteImageHttpHeaders,
+                  ),
                 ),
               );
             },
@@ -617,18 +685,6 @@ class _ProfileAvatar extends StatelessWidget {
 
   final UserModel user;
 
-  static String _resolveUrl(UserModel u) {
-    final raw = u.avatarUrl?.trim();
-    if (raw == null || raw.isEmpty) {
-      return 'https://ui-avatars.com/api/?name=${Uri.encodeComponent(u.username)}'
-          '&background=002FA7&color=fff&format=png';
-    }
-    if (raw.contains('ui-avatars.com') && !raw.contains('format=')) {
-      return raw.contains('?') ? '$raw&format=png' : '$raw?format=png';
-    }
-    return raw;
-  }
-
   static String _initial(String username) {
     if (username.isEmpty) return '?';
     return String.fromCharCode(username.runes.first);
@@ -636,10 +692,11 @@ class _ProfileAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final url = _resolveUrl(user);
+    final url = resolveAvatarUrl(user.avatarUrl, user.username);
     return ClipOval(
       child: CachedNetworkImage(
         imageUrl: url,
+        httpHeaders: kRemoteImageHttpHeaders,
         width: 84,
         height: 84,
         fit: BoxFit.cover,
@@ -672,54 +729,3 @@ class _ProfileAvatar extends StatelessWidget {
   }
 }
 
-class _GearCard extends StatelessWidget {
-  const _GearCard({required this.title, required this.type});
-  final String title;
-  final String type;
-
-  static IconData iconForType(String type) {
-    final t = type.toLowerCase();
-    if (t.contains('镜') || t.contains('lens')) {
-      return Icons.camera_outlined;
-    }
-    if (t.contains('身') || t.contains('body') || t.contains('camera')) {
-      return Icons.camera_alt;
-    }
-    return Icons.precision_manufacturing_outlined;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 150,
-      margin: const EdgeInsets.only(right: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.borderLight),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            _GearCard.iconForType(type),
-            color: AppColors.kleinBlue,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            type,
-            style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
-          ),
-          Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-          ),
-        ],
-      ),
-    );
-  }
-}

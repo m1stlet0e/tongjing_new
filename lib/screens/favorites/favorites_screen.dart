@@ -12,6 +12,7 @@ import 'package:provider/provider.dart';
 import 'package:tongjing/models/photo_models.dart';
 import 'package:tongjing/providers/auth_provider.dart';
 import 'package:tongjing/theme/app_colors.dart';
+import 'package:tongjing/utils/remote_image.dart';
 
 /// `FavoritesScreen`：页面组件，负责构建界面布局并响应用户操作。
 ///
@@ -99,11 +100,18 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                         return GestureDetector(
                           onTap: () async {
                             await context.push('/photo/${p.id}');
-                            if (mounted) await _load();
+                            if (!context.mounted) return;
+                            await _load();
+                            if (!context.mounted) return;
+                            await context.read<AuthNotifier>().refreshProfile();
                           },
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(8),
-                            child: CachedNetworkImage(imageUrl: p.imageUrl, fit: BoxFit.cover),
+                            child: CachedNetworkImage(
+                              imageUrl: p.imageUrl,
+                              fit: BoxFit.cover,
+                              httpHeaders: kRemoteImageHttpHeaders,
+                            ),
                           ),
                         );
                       },

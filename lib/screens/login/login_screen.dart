@@ -270,27 +270,31 @@ class _LoginScreenState extends State<LoginScreen> {
                     )
                   : const Text('登录'),
             ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: _wechatLogging ? null : _wechatLogin,
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
+            if (AppConfig.enableWechatLogin) ...[
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: _wechatLogging ? null : _wechatLogin,
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                icon: _wechatLogging
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.wechat, color: Color(0xFF07C160)),
+                label: Text(_wechatLogging ? '微信登录中...' : '微信登录'),
               ),
-              icon: _wechatLogging
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.wechat, color: Color(0xFF07C160)),
-              label: Text(_wechatLogging ? '微信登录中...' : '微信登录'),
-            ),
+            ],
             const SizedBox(height: 24),
-            const Text(
+            Text(
               AppConfig.cloudbaseUseNativeAuth
-                  ? '当前使用 CloudBase 原生短信验证码登录。'
+                  ? (AppConfig.enableWechatLogin
+                      ? '当前使用 CloudBase 原生短信验证码登录，可选微信登录。'
+                      : '当前使用 CloudBase 原生短信验证码登录。')
                   : '开发环境：点击“获取验证码”后会在提示里显示开发码。',
-              style: TextStyle(fontSize: 11, color: AppColors.textMuted),
+              style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
             ),
           ],
         ),

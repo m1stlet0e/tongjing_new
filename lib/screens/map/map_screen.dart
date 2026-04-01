@@ -20,6 +20,7 @@ import 'package:tongjing/models/photo_models.dart';
 import 'package:tongjing/providers/auth_provider.dart';
 import 'package:tongjing/services/api_service.dart';
 import 'package:tongjing/theme/app_colors.dart';
+import 'package:tongjing/utils/remote_image.dart';
 
 /// 从作品详情等跳转地图时传入 [GoRouterState.extra]，用于定位与搜索预填。
 class MapOpenArgs {
@@ -63,8 +64,6 @@ class _MapScreenState extends State<MapScreen> {
   /// 0 热门机位聚合；1 当前地图范围内的作品列表。
   int _listMode = 0;
   Timer? _reloadDebounce;
-  static const _mockImage =
-      'https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?auto=format&fit=crop&w=1200&q=80';
 
   /// 点击地图空白处时，距该点小于此距离（米）的最近作品会打开详情。
   static const double _mapTapPickRadiusM = 900;
@@ -173,16 +172,6 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> _load() async {
-    if (AppConfig.useMockData) {
-      setState(() {
-        _loading = false;
-        _error = null;
-        _markers = _mockMarkers();
-        _popular = _mockPopular();
-      });
-      return;
-    }
-
     setState(() {
       _loading = true;
       _error = null;
@@ -334,6 +323,7 @@ class _MapScreenState extends State<MapScreen> {
                                         borderRadius: BorderRadius.circular(8),
                                         child: CachedNetworkImage(
                                           imageUrl: p.imageUrl,
+                                          httpHeaders: kRemoteImageHttpHeaders,
                                           fit: BoxFit.cover,
                                           width: 48,
                                           height: 48,
@@ -466,10 +456,11 @@ class _MapScreenState extends State<MapScreen> {
                                 borderRadius: BorderRadius.circular(6),
                                 child: CachedNetworkImage(
                                   imageUrl: p.imageUrl,
+                                  httpHeaders: kRemoteImageHttpHeaders,
                                   width: 56,
                                   height: 56,
                                   fit: BoxFit.cover,
-                                  errorWidget: (_, __, ___) => Container(
+                                  errorWidget: (context, url, error) => Container(
                                     width: 56,
                                     height: 56,
                                     color: AppColors.kleinBlue,
@@ -502,63 +493,4 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  List<PhotoListItem> _mockMarkers() {
-    return [
-      PhotoListItem(
-        id: 99001,
-        imageUrl: _mockImage,
-        title: '外滩机位示例',
-        locationName: '外滩观景台',
-        latitude: 31.2400,
-        longitude: 121.4900,
-        cameraModel: 'Sony A7M4',
-        likesCount: 120,
-      ),
-      PhotoListItem(
-        id: 99002,
-        imageUrl:
-            'https://images.unsplash.com/photo-1514565131-fce0801e5785?auto=format&fit=crop&w=1200&q=80',
-        title: '陆家嘴夜景示例',
-        locationName: '陆家嘴滨江',
-        latitude: 31.2350,
-        longitude: 121.5070,
-        cameraModel: 'Canon R6',
-        likesCount: 88,
-      ),
-      PhotoListItem(
-        id: 99003,
-        imageUrl:
-            'https://images.unsplash.com/photo-1461716834815-55d4f42a5d05?auto=format&fit=crop&w=1200&q=80',
-        title: '武康路街拍示例',
-        locationName: '武康路',
-        latitude: 31.2044,
-        longitude: 121.4338,
-        cameraModel: 'Fujifilm X-T5',
-        likesCount: 66,
-      ),
-    ];
-  }
-
-  List<Map<String, dynamic>> _mockPopular() {
-    return [
-      {
-        'location_name': '外滩观景台',
-        'latitude': 31.2400,
-        'longitude': 121.4900,
-        'photo_count': 86,
-      },
-      {
-        'location_name': '陆家嘴滨江',
-        'latitude': 31.2350,
-        'longitude': 121.5070,
-        'photo_count': 59,
-      },
-      {
-        'location_name': '武康路',
-        'latitude': 31.2044,
-        'longitude': 121.4338,
-        'photo_count': 42,
-      },
-    ];
-  }
 }

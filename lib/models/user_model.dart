@@ -15,6 +15,10 @@ class UserModel {
     this.photosCount,
     this.followersCount,
     this.followingCount,
+    this.likesReceived,
+    this.favoritesReceived,
+    this.myFavoritesCount,
+    this.myLikesCount,
     this.isFollowing,
   });
 
@@ -26,6 +30,18 @@ class UserModel {
   final int? photosCount;
   final int? followersCount;
   final int? followingCount;
+
+  /// 他人对「我的作品」点赞次数累计（各作品 likes_count 之和）。
+  final int? likesReceived;
+
+  /// 他人收藏「我的作品」次数累计。
+  final int? favoritesReceived;
+
+  /// 我收藏的作品数量。
+  final int? myFavoritesCount;
+
+  /// 我点过赞的作品数量。
+  final int? myLikesCount;
 
   /// 公开主页接口 [is_following]；`/me` 无此字段时为 null。
   final bool? isFollowing;
@@ -41,6 +57,10 @@ class UserModel {
       photosCount: (json['photos_count'] as num?)?.toInt(),
       followersCount: (json['followers_count'] as num?)?.toInt(),
       followingCount: (json['following_count'] as num?)?.toInt(),
+      likesReceived: (json['likes_received'] as num?)?.toInt(),
+      favoritesReceived: (json['favorites_received'] as num?)?.toInt(),
+      myFavoritesCount: (json['my_favorites_count'] as num?)?.toInt(),
+      myLikesCount: (json['my_likes_count'] as num?)?.toInt(),
       isFollowing: rawFollow == true
           ? true
           : rawFollow == false
@@ -55,5 +75,12 @@ class UserModel {
         if (phone != null) 'phone': phone,
         if (avatarUrl != null) 'avatar_url': avatarUrl,
         if (bio != null) 'bio': bio,
+        if (photosCount != null) 'photos_count': photosCount,
+        if (followersCount != null) 'followers_count': followersCount,
+        if (followingCount != null) 'following_count': followingCount,
+        if (likesReceived != null) 'likes_received': likesReceived,
+        if (favoritesReceived != null) 'favorites_received': favoritesReceived,
+        if (myFavoritesCount != null) 'my_favorites_count': myFavoritesCount,
+        if (myLikesCount != null) 'my_likes_count': myLikesCount,
       };
 }

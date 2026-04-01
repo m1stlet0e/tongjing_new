@@ -1,23 +1,13 @@
-// 文件说明：页面层代码，负责 UI 构建、交互处理与页面状态展示。
-// 维护建议：修改行为时同步更新注释，保证文档与实现一致。
-
-// 页面模块：`privacy_screen` 页面，负责对应业务场景的 UI 组织、交互处理与状态展示。
-//
-// 说明：该文件已补充中文注释，便于后续维护与交接。
-
 import 'package:flutter/material.dart';
+import 'package:tongjing/config/app_config.dart';
+import 'package:tongjing/support/legal_urls.dart';
 import 'package:tongjing/theme/app_colors.dart';
 
-/// `PrivacyScreen`：页面组件，负责构建界面布局并响应用户操作。
-///
-/// 主要用于统一该模块的核心能力与数据结构边界。
+/// 隐私政策（应用内摘要 + 可选跳转官网完整版）。
 class PrivacyScreen extends StatelessWidget {
   const PrivacyScreen({super.key});
 
   @override
-  /// 构建当前组件的 Widget 树，并根据状态输出对应界面。
-  ///
-  /// 方法：`build`。
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -26,14 +16,32 @@ class PrivacyScreen extends StatelessWidget {
         backgroundColor: Colors.white,
         foregroundColor: AppColors.textPrimary,
       ),
-      body: const SingleChildScrollView(
-        padding: EdgeInsets.all(20),
-        child: Text(
-          '同镜重视你的隐私。\n\n'
-          '本应用会按业务需要处理你主动提供的手机号、昵称、头像、作品与位置等信息，'
-          '用于账号服务、内容展示与地图相关功能。具体范围以服务端配置及你使用的功能为准。\n\n'
-          '若需正式法律文本，请在上线前由法务补充完整版隐私政策。',
-          style: TextStyle(height: 1.5, fontSize: 15),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (AppConfig.legalPrivacyUri != null) ...[
+              FilledButton(
+                onPressed: () => openLegalPage(
+                  context,
+                  AppConfig.legalPrivacyUri,
+                  '未配置官网地址',
+                ),
+                child: const Text('在浏览器中查看完整隐私政策'),
+              ),
+              const SizedBox(height: 20),
+            ],
+            const Text(
+              '同镜重视您的个人信息与隐私保护。我们可能根据业务需要处理以下信息：\n\n'
+              '· 账号信息：手机号或第三方登录标识，用于注册登录与账号安全。\n'
+              '· 您提供的内容：作品、文字、收藏、计划等。\n'
+              '· 设备与日志：用于保障服务稳定与安全。\n'
+              '· 位置信息：仅在您授权后用于地图、机位等相关功能。\n\n'
+              '我们不会在未说明的情况下向无关第三方出售您的个人信息；具体收集范围、使用目的、存储期限、您的权利与联系方式等，以官网《隐私政策》全文为准。',
+              style: TextStyle(height: 1.55, fontSize: 15),
+            ),
+          ],
         ),
       ),
     );

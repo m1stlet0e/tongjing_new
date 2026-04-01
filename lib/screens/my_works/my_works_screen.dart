@@ -11,7 +11,9 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:tongjing/models/photo_models.dart';
 import 'package:tongjing/providers/auth_provider.dart';
+import 'package:tongjing/router/photo_gallery_extra.dart';
 import 'package:tongjing/theme/app_colors.dart';
+import 'package:tongjing/utils/remote_image.dart';
 
 /// `MyWorksScreen`：页面组件，负责构建界面布局并响应用户操作。
 ///
@@ -51,6 +53,22 @@ class _MyWorksScreenState extends State<MyWorksScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _openPhotoInGallery(PhotoListItem p) async {
+    final ids = dedupePhotoIdsInOrder(_list.map((e) => e.id));
+    final ix = ids.indexOf(p.id);
+    final dynamic r = ids.length > 1
+        ? await context.push(
+            '/photo/${p.id}',
+            extra: PhotoGalleryExtra(
+              photoIds: ids,
+              initialIndex: ix >= 0 ? ix : 0,
+            ),
+          )
+        : await context.push('/photo/${p.id}');
+    if (!context.mounted) return;
+    if (r == true) await _load();
   }
 
   @override
@@ -97,10 +115,14 @@ class _MyWorksScreenState extends State<MyWorksScreen> {
                       itemBuilder: (context, i) {
                         final p = _list[i];
                         return GestureDetector(
-                          onTap: () => context.push('/photo/${p.id}'),
+                          onTap: () => _openPhotoInGallery(p),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(4),
-                            child: CachedNetworkImage(imageUrl: p.imageUrl, fit: BoxFit.cover),
+                            child: CachedNetworkImage(
+                              imageUrl: p.imageUrl,
+                              fit: BoxFit.cover,
+                              httpHeaders: kRemoteImageHttpHeaders,
+                            ),
                           ),
                         );
                       },

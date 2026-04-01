@@ -11,6 +11,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:tongjing/providers/auth_provider.dart';
 import 'package:tongjing/theme/app_colors.dart';
+import 'package:tongjing/utils/remote_image.dart';
 
 /// `MySpotsScreen`：页面组件，负责构建界面布局并响应用户操作。
 ///
@@ -123,6 +124,7 @@ class _MySpotsScreenState extends State<MySpotsScreen> {
                                     borderRadius: BorderRadius.circular(6),
                                     child: CachedNetworkImage(
                                       imageUrl: img,
+                                      httpHeaders: kRemoteImageHttpHeaders,
                                       width: 56,
                                       height: 56,
                                       fit: BoxFit.cover,

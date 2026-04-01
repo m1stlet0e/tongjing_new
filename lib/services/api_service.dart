@@ -365,12 +365,17 @@ class ApiService {
   Future<({List<PhotoListItem> photos, Pagination pagination})> photosMy({
     int page = 1,
     int limit = 20,
+    String? sort,
   }) async {
     return _guardNetwork(() async {
+      final query = <String, String>{'page': '$page', 'limit': '$limit'};
+      if (sort != null && sort.isNotEmpty) {
+        query['sort'] = sort;
+      }
       final r = await _requestSpring(
         method: 'GET',
         path: '/api/v1/photos/my',
-        query: {'page': '$page', 'limit': '$limit'},
+        query: query,
         authMode: ApiAuthMode.required,
       );
       final j = r.j;
@@ -400,6 +405,36 @@ class ApiService {
       final r = await _requestSpring(
         method: 'GET',
         path: '/api/v1/photos/favorites',
+        query: {'page': '$page', 'limit': '$limit'},
+        authMode: ApiAuthMode.required,
+      );
+      final j = r.j;
+      if (r.status >= 400 || j['success'] != true) {
+        throw ApiException(j['error']?.toString() ?? '加载失败', r.status);
+      }
+      final data = j['data'] as Map<String, dynamic>;
+      final list = (data['photos'] as List<dynamic>? ?? [])
+          .map((e) => PhotoListItem.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      final p = data['pagination'] as Map<String, dynamic>? ?? {};
+      final pagination = Pagination(
+        page: (p['page'] as num?)?.toInt() ?? page,
+        limit: (p['limit'] as num?)?.toInt() ?? limit,
+        total: (p['total'] as num?)?.toInt() ?? 0,
+      );
+      return (photos: list, pagination: pagination);
+    });
+  }
+
+  /// 我点过赞的作品（按点赞时间倒序）。
+  Future<({List<PhotoListItem> photos, Pagination pagination})> photosLikedByMe({
+    int page = 1,
+    int limit = 20,
+  }) async {
+    return _guardNetwork(() async {
+      final r = await _requestSpring(
+        method: 'GET',
+        path: '/api/v1/photos/liked-by-me',
         query: {'page': '$page', 'limit': '$limit'},
         authMode: ApiAuthMode.required,
       );
@@ -688,6 +723,40 @@ class ApiService {
       final data = j['data'] as Map<String, dynamic>? ?? {};
       return data['is_following'] == true;
     });
+  }
+
+  /// 关注我的用户（粉丝列表）。
+  Future<List<UserModel>> usersMyFollowers() async {
+    final r = await _requestSpring(
+      method: 'GET',
+      path: '/api/v1/users/me/followers',
+      authMode: ApiAuthMode.required,
+    );
+    final j = r.j;
+    if (r.status >= 400 || j['success'] != true) {
+      throw ApiException(j['error']?.toString() ?? '加载失败', r.status);
+    }
+    final raw = j['data'] as List<dynamic>? ?? [];
+    return raw
+        .map((e) => UserModel.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  /// 我关注的用户列表。
+  Future<List<UserModel>> usersMyFollowing() async {
+    final r = await _requestSpring(
+      method: 'GET',
+      path: '/api/v1/users/me/following',
+      authMode: ApiAuthMode.required,
+    );
+    final j = r.j;
+    if (r.status >= 400 || j['success'] != true) {
+      throw ApiException(j['error']?.toString() ?? '加载失败', r.status);
+    }
+    final raw = j['data'] as List<dynamic>? ?? [];
+    return raw
+        .map((e) => UserModel.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
   }
 
   Future<Map<String, dynamic>> uploadAvatar(String filePath) async {

@@ -44,9 +44,6 @@ class _MainShellState extends State<MainShell> {
   }
 
   @override
-  /// 构建当前组件的 Widget 树，并根据状态输出对应界面。
-  ///
-  /// 方法：`build`。
   Widget build(BuildContext context) {
     return PlanTabRefreshScope(
       signal: _planTabActivationTick,
@@ -131,9 +128,6 @@ class _MainShellState extends State<MainShell> {
     );
   }
 
-  /// 执行业务流程并返回该流程的处理结果。
-  ///
-  /// 方法：`_publish`。
   Widget _publish() {
     return Expanded(
       child: InkWell(

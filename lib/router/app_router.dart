@@ -20,8 +20,11 @@ import 'package:tongjing/screens/my_equipment/my_equipment_screen.dart';
 import 'package:tongjing/screens/my_plans/my_plans_screen.dart';
 import 'package:tongjing/screens/my_spots/my_spots_screen.dart';
 import 'package:tongjing/screens/my_works/my_works_screen.dart';
+import 'package:tongjing/router/photo_gallery_extra.dart';
 import 'package:tongjing/screens/photo_detail/photo_detail_screen.dart';
 import 'package:tongjing/screens/plan/plan_screen.dart';
+import 'package:tongjing/screens/profile/my_follow_list_screen.dart';
+import 'package:tongjing/screens/profile/my_interaction_lists_screen.dart';
 import 'package:tongjing/screens/profile/profile_screen.dart';
 import 'package:tongjing/screens/publish/publish_screen.dart';
 import 'package:tongjing/screens/settings/settings_screen.dart';
@@ -29,6 +32,7 @@ import 'package:tongjing/screens/shell/main_shell.dart';
 import 'package:tongjing/screens/static/about_screen.dart';
 import 'package:tongjing/screens/static/account_security_screen.dart';
 import 'package:tongjing/screens/static/privacy_screen.dart';
+import 'package:tongjing/screens/static/terms_screen.dart';
 
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -113,7 +117,28 @@ GoRouter createAppRouter(AuthNotifier auth) {
         parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (context, state) {
           final id = int.tryParse(state.pathParameters['id'] ?? '') ?? 0;
-          return _instantPage(state, PhotoDetailScreen(photoId: id));
+          final ex = state.extra;
+          List<int>? galleryIds;
+          var galleryIx = 0;
+          if (ex is PhotoGalleryExtra) {
+            final raw = dedupePhotoIdsInOrder(ex.photoIds);
+            if (raw.length > 1) {
+              galleryIds = raw;
+              galleryIx = ex.initialIndex.clamp(0, galleryIds.length - 1);
+              if (galleryIds[galleryIx] != id) {
+                final found = galleryIds.indexOf(id);
+                if (found >= 0) galleryIx = found;
+              }
+            }
+          }
+          return _instantPage(
+            state,
+            PhotoDetailScreen(
+              photoId: id,
+              galleryPhotoIds: galleryIds,
+              galleryInitialIndex: galleryIx,
+            ),
+          );
         },
       ),
       GoRoute(
@@ -149,6 +174,12 @@ GoRouter createAppRouter(AuthNotifier auth) {
             _instantPage(state, const PrivacyScreen()),
       ),
       GoRoute(
+        path: '/terms',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) =>
+            _instantPage(state, const TermsScreen()),
+      ),
+      GoRoute(
         path: '/account-security',
         parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (context, state) =>
@@ -170,6 +201,36 @@ GoRouter createAppRouter(AuthNotifier auth) {
         parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (context, state) =>
             _instantPage(state, const MyWorksScreen()),
+      ),
+      GoRoute(
+        path: '/my-stats/received-likes',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) =>
+            _instantPage(state, const MyReceivedWorksScreen(sort: 'likes')),
+      ),
+      GoRoute(
+        path: '/my-stats/received-favorites',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) =>
+            _instantPage(state, const MyReceivedWorksScreen(sort: 'favorites')),
+      ),
+      GoRoute(
+        path: '/my-liked-photos',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) =>
+            _instantPage(state, const MyLikedPhotosScreen()),
+      ),
+      GoRoute(
+        path: '/my-followers',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) =>
+            _instantPage(state, const MyFollowListScreen(showFollowing: false)),
+      ),
+      GoRoute(
+        path: '/my-following',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) =>
+            _instantPage(state, const MyFollowListScreen(showFollowing: true)),
       ),
       GoRoute(
         path: '/my-spots',
