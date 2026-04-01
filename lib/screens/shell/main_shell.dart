@@ -76,7 +76,7 @@ class _MainShellState extends State<MainShell> {
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
                     _item(0, Icons.home_outlined, Icons.home, '首页'),
-                    _item(1, Icons.map_outlined, Icons.map, '机位'),
+                    _item(1, Icons.place_outlined, Icons.place, '机位'),
                     _publish(),
                     _item(
                       3,

@@ -48,7 +48,6 @@ class PhotoDetailScreen extends StatelessWidget {
     return _PhotoDetailPage(
       key: ValueKey(photoId),
       photoId: photoId,
-      constrainPanToVertical: false,
       onPhotoDeletedFromGallery: null,
     );
   }
@@ -110,67 +109,17 @@ class _PhotoGalleryPagerState extends State<_PhotoGalleryPager> {
   Widget build(BuildContext context) {
     return PageView.builder(
       controller: _controller,
-      physics: const BouncingScrollPhysics(
+      physics: const ClampingScrollPhysics(
         parent: AlwaysScrollableScrollPhysics(),
       ),
       itemCount: _ids.length,
       itemBuilder: (context, i) {
-        return _GalleryPageTransformer(
-          controller: _controller,
-          index: i,
-          child: _PhotoDetailPage(
-            key: ValueKey(_ids[i]),
-            photoId: _ids[i],
-            constrainPanToVertical: true,
-            onPhotoDeletedFromGallery: _onPhotoDeletedFromGallery,
-          ),
+        return _PhotoDetailPage(
+          key: ValueKey(_ids[i]),
+          photoId: _ids[i],
+          onPhotoDeletedFromGallery: _onPhotoDeletedFromGallery,
         );
       },
-    );
-  }
-}
-
-/// 多图相册横向滑动：轻微视差、缩放与透明度过渡（摄影师主页 / 我的作品等入口共用）。
-class _GalleryPageTransformer extends StatelessWidget {
-  const _GalleryPageTransformer({
-    required this.controller,
-    required this.index,
-    required this.child,
-  });
-
-  final PageController controller;
-  final int index;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: controller,
-      builder: (context, child) {
-        double page;
-        if (controller.hasClients && controller.position.haveDimensions) {
-          page = controller.page ?? index.toDouble();
-        } else {
-          page = controller.initialPage.toDouble();
-        }
-        final delta = page - index;
-        final distance = delta.abs().clamp(0.0, 1.0);
-        final scale = (1.0 - distance * 0.085).clamp(0.91, 1.0);
-        final opacity = (1.0 - distance * 0.32).clamp(0.62, 1.0);
-        final tx = delta * 36.0;
-        return Transform.translate(
-          offset: Offset(tx, 0),
-          child: Opacity(
-            opacity: opacity,
-            child: Transform.scale(
-              scale: scale,
-              alignment: Alignment.center,
-              child: child,
-            ),
-          ),
-        );
-      },
-      child: child,
     );
   }
 }
@@ -179,12 +128,10 @@ class _PhotoDetailPage extends StatefulWidget {
   const _PhotoDetailPage({
     super.key,
     required this.photoId,
-    required this.constrainPanToVertical,
     required this.onPhotoDeletedFromGallery,
   });
 
   final int photoId;
-  final bool constrainPanToVertical;
 
   /// 非空时表示处于作品画廊内，删除后由外层更新列表而非整页 pop。
   final void Function(int photoId)? onPhotoDeletedFromGallery;
@@ -196,6 +143,7 @@ class _PhotoDetailPage extends StatefulWidget {
 class _PhotoDetailPageState extends State<_PhotoDetailPage>
     with AutomaticKeepAliveClientMixin {
   final _planStore = PlanStore();
+  final TransformationController _imageTransform = TransformationController();
   PhotoDetail? _photo;
   bool _loading = true;
   String? _error;
@@ -216,6 +164,20 @@ class _PhotoDetailPageState extends State<_PhotoDetailPage>
   void initState() {
     super.initState();
     _fetch();
+  }
+
+  @override
+  void dispose() {
+    _imageTransform.dispose();
+    super.dispose();
+  }
+
+  /// 未放大时不允许拖动照片（避免与相册左右滑抢手势、也避免 1 倍下乱移画面）。
+  void _snapImageTransformIfNotZoomed() {
+    final s = _imageTransform.value.getMaxScaleOnAxis();
+    if (s <= 1.001) {
+      _imageTransform.value = Matrix4.identity();
+    }
   }
 
   Future<void> _fetch() async {
@@ -484,7 +446,10 @@ class _PhotoDetailPageState extends State<_PhotoDetailPage>
           return const SizedBox.expand();
         }
         return InteractiveViewer(
-          panAxis: widget.constrainPanToVertical ? PanAxis.vertical : PanAxis.free,
+          transformationController: _imageTransform,
+          onInteractionUpdate: (_) => _snapImageTransformIfNotZoomed(),
+          onInteractionEnd: (_) => _snapImageTransformIfNotZoomed(),
+          panAxis: PanAxis.free,
           minScale: 1,
           maxScale: 5,
           clipBehavior: Clip.hardEdge,
@@ -810,7 +775,7 @@ class _PhotoDetailPageState extends State<_PhotoDetailPage>
                                               child: Row(
                                                 children: [
                                                   const Icon(
-                                                    Icons.map_outlined,
+                                                    Icons.place_outlined,
                                                     size: 20,
                                                     color: AppColors.kleinBlue,
                                                   ),

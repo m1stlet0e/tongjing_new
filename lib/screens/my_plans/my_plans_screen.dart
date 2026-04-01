@@ -1,10 +1,3 @@
-// 文件说明：页面层代码，负责 UI 构建、交互处理与页面状态展示。
-// 维护建议：修改行为时同步更新注释，保证文档与实现一致。
-
-// 页面模块：`my_plans_screen` 页面，负责对应业务场景的 UI 组织、交互处理与状态展示。
-//
-// 说明：该文件已补充中文注释，便于后续维护与交接。
-
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -12,10 +5,9 @@ import 'package:tongjing/models/plan_item.dart';
 import 'package:tongjing/providers/auth_provider.dart';
 import 'package:tongjing/services/plan_store.dart';
 import 'package:tongjing/theme/app_colors.dart';
+import 'package:tongjing/widgets/shoot_plan_widgets.dart';
 
-/// `MyPlansScreen`：页面组件，负责构建界面布局并响应用户操作。
-///
-/// 主要用于统一该模块的核心能力与数据结构边界。
+/// 全屏「我的计划」：与底部「计划」Tab 中列表样式一致（卡片 + 统计条）。
 class MyPlansScreen extends StatefulWidget {
   const MyPlansScreen({super.key});
 
@@ -23,18 +15,14 @@ class MyPlansScreen extends StatefulWidget {
   State<MyPlansScreen> createState() => _MyPlansScreenState();
 }
 
-/// `_MyPlansScreenState`：核心类型定义，承载该模块的主要职责。
-///
-/// 主要用于统一该模块的核心能力与数据结构边界。
 class _MyPlansScreenState extends State<MyPlansScreen> {
   final _planStore = PlanStore();
   List<PlanItem> _plans = [];
   bool _loading = true;
 
+  int get _doneCount => _plans.where((p) => p.done).length;
+
   @override
-  /// 组件初始化阶段执行一次，用于准备首屏数据与监听器。
-  ///
-  /// 方法：`initState`。
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
@@ -80,23 +68,9 @@ class _MyPlansScreenState extends State<MyPlansScreen> {
   }
 
   @override
-  /// 构建当前组件的 Widget 树，并根据状态输出对应界面。
-  ///
-  /// 方法：`build`。
   Widget build(BuildContext context) {
     final isLoggedIn =
         context.select<AuthNotifier, bool>((a) => a.isAuthenticated);
-    if (!isLoggedIn) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('我的计划')),
-        body: Center(
-          child: FilledButton(
-            onPressed: () => context.push('/login'),
-            child: const Text('请先登录'),
-          ),
-        ),
-      );
-    }
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -105,41 +79,77 @@ class _MyPlansScreenState extends State<MyPlansScreen> {
         backgroundColor: Colors.white,
         foregroundColor: AppColors.textPrimary,
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: _plans.isEmpty
-                  ? ListView(children: const [SizedBox(height: 120), Center(child: Text('暂无计划'))])
-                  : ListView.separated(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: _plans.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 10),
-                      itemBuilder: (context, i) {
-                        final p = _plans[i];
-                        return Card(
-                          child: ListTile(
-                            title: Text(p.title),
-                            subtitle: Text(
-                              '${p.location}\n${p.cameraLine}${p.tips == null || p.tips!.isEmpty ? '' : '\n${p.tips}'}',
-                              maxLines: 2,
-                            ),
-                            isThreeLine: true,
-                            leading: Checkbox(
-                              value: p.done,
-                              onChanged: (v) => _toggleDone(p, v),
-                            ),
-                            onTap: p.photoId > 0
-                                ? () async {
-                                    await context.push('/photo/${p.photoId}');
-                                    if (mounted) await _load();
-                                  }
-                                : null,
-                          ),
-                        );
-                      },
+      body: !isLoggedIn
+          ? ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(20, 32, 20, 24),
+              children: [
+                ShootPlanEmptyPanel(
+                  icon: Icons.lock_outline_rounded,
+                  title: '登录后同步拍摄计划',
+                  subtitle: '在作品详情页可将机位加入计划，登录后与云端保持一致。',
+                  action: FilledButton(
+                    onPressed: () => context.push('/login'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.kleinBlue,
+                      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
                     ),
-            ),
+                    child: const Text('去登录'),
+                  ),
+                ),
+              ],
+            )
+          : _loading
+              ? const Center(
+                  child: CircularProgressIndicator(color: AppColors.kleinBlue),
+                )
+              : _plans.isEmpty
+                  ? RefreshIndicator(
+                      color: AppColors.kleinBlue,
+                      onRefresh: _load,
+                      child: ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(20, 32, 20, 24),
+                        children: const [
+                          ShootPlanEmptyPanel(
+                            icon: Icons.add_task_rounded,
+                            title: '还没有拍摄计划',
+                            subtitle: '在作品详情页点击「拍计划」，把想去的机位收进这里。',
+                          ),
+                        ],
+                      ),
+                    )
+                  : RefreshIndicator(
+                      color: AppColors.kleinBlue,
+                      onRefresh: _load,
+                      child: ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                        children: [
+                          ShootPlanSummaryBar(
+                            total: _plans.length,
+                            done: _doneCount,
+                          ),
+                          const SizedBox(height: 14),
+                          ..._plans.map(
+                            (p) => Padding(
+                              padding: const EdgeInsets.only(bottom: 14),
+                              child: ShootPlanCard(
+                                item: p,
+                                onToggleDone: (v) => _toggleDone(p, v),
+                                onOpenPhoto: p.photoId > 0
+                                    ? () async {
+                                        await context.push('/photo/${p.photoId}');
+                                        if (mounted) await _load();
+                                      }
+                                    : null,
+                                onOpenMap: () => context.go('/map'),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
     );
   }
 }
