@@ -16,6 +16,9 @@ import 'package:tongjing/services/analytics_service.dart';
 import 'package:tongjing/services/api_service.dart';
 import 'package:tongjing/services/publish_draft_store.dart';
 import 'package:tongjing/theme/app_colors.dart';
+import 'package:tongjing/theme/app_spacing.dart';
+import 'package:tongjing/theme/app_typography.dart';
+import 'package:tongjing/theme/app_shapes.dart';
 import 'package:tongjing/utils/photo_recipe_display.dart';
 
 /// `PublishScreen`：页面组件，负责构建界面布局并响应用户操作。
@@ -737,37 +740,56 @@ class _PublishScreenState extends State<PublishScreen> {
               ],
             ),
           ),
-        _Step.select => Padding(
-            padding: const EdgeInsets.all(24),
+        _Step.select => SingleChildScrollView(
+            padding: const EdgeInsets.all(AppSpacing.xxl),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // 页面标题
+                const Text(
+                  '发布作品',
+                  style: AppTypography.pageTitle,
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  '选择一张照片，分享你的拍摄故事',
+                  style: AppTypography.secondary,
+                ),
+                const SizedBox(height: AppSpacing.xhuge),
+
+                // 草稿提示
                 if (_hasLocalDraft) ...[
                   Container(
-                    padding: const EdgeInsets.all(14),
+                    padding: AppSpacing.cardPadding,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFEFF4FF),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.borderLight),
+                      color: AppColors.infoLight,
+                      borderRadius: AppShapes.radiusXlAll,
+                      border: Border.all(color: AppColors.infoLight.withValues(alpha: 0.5)),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        const Text(
-                          '检测到未发布的草稿（含已上传图片，可继续编辑）',
-                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                        Row(
+                          children: [
+                            const Icon(Icons.history, color: AppColors.kleinBlue, size: 20),
+                            AppSpacing.horizontalSm,
+                            const Text(
+                              '检测到未发布的草稿',
+                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                            ),
+                          ],
                         ),
                         if (_draftSavedAtLabel != null) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            '最近保存：$_draftSavedAtLabel',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textMuted,
+                          AppSpacing.verticalXs,
+                          Padding(
+                            padding: const EdgeInsets.only(left: 28),
+                            child: Text(
+                              '最近保存：$_draftSavedAtLabel',
+                              style: AppTypography.secondarySmall,
                             ),
                           ),
                         ],
-                        const SizedBox(height: 10),
+                        AppSpacing.verticalMd,
                         Row(
                           children: [
                             Expanded(
@@ -779,7 +801,7 @@ class _PublishScreenState extends State<PublishScreen> {
                                 child: const Text('继续编辑'),
                               ),
                             ),
-                            const SizedBox(width: 8),
+                            AppSpacing.horizontalSm,
                             Expanded(
                               child: OutlinedButton(
                                 onPressed: _busy ? null : _discardDraft,
@@ -791,37 +813,92 @@ class _PublishScreenState extends State<PublishScreen> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  AppSpacing.verticalLg,
                 ],
-                if (_imagePath != null)
-                  Text('已选择图片，点击下方上传', style: TextStyle(color: AppColors.textSecondary)),
+
+                // 错误提示
                 if (_lastUploadError != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    '上次上传失败：$_lastUploadError',
-                    style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+                  Container(
+                    padding: AppSpacing.cardPadding,
+                    decoration: BoxDecoration(
+                      color: AppColors.errorLight,
+                      borderRadius: AppShapes.radiusXlAll,
+                      border: Border.all(color: AppColors.errorLighter),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.error_outline, color: AppColors.error, size: 20),
+                        AppSpacing.horizontalSm,
+                        Expanded(
+                          child: Text(
+                            '上次上传失败：$_lastUploadError',
+                            style: AppTypography.secondarySmall.copyWith(color: AppColors.error),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  AppSpacing.verticalLg,
+                ],
+
+                // 选择图片区域 - 大卡片设计
+                if (_imagePath == null) ...[
+                  // 未选择图片时的大卡片
+                  _buildSelectPhotoCard(
+                    icon: Icons.photo_library_rounded,
+                    title: '从相册选择',
+                    subtitle: '选择已有的照片上传',
+                    color: AppColors.kleinBlue,
+                    onTap: _busy ? null : () => _pick(ImageSource.gallery),
+                  ),
+                  AppSpacing.verticalMd,
+                  _buildSelectPhotoCard(
+                    icon: Icons.camera_alt_rounded,
+                    title: '拍照',
+                    subtitle: '直接拍摄新照片',
+                    color: AppColors.champagneGold,
+                    onTap: _busy ? null : () => _pick(ImageSource.camera),
+                  ),
+                ] else ...[
+                  // 已选择图片的预览卡片
+                  _buildSelectedImagePreview(),
+                  AppSpacing.verticalLg,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _busy ? null : () => _pick(ImageSource.gallery),
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('重新选择'),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
-                const SizedBox(height: 16),
-                OutlinedButton.icon(
-                  onPressed: _busy ? null : () => _pick(ImageSource.gallery),
-                  icon: const Icon(Icons.photo_library_outlined),
-                  label: const Text('从相册选择'),
-                ),
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: _busy ? null : () => _pick(ImageSource.camera),
-                  icon: const Icon(Icons.camera_alt_outlined),
-                  label: const Text('拍照'),
-                ),
-                const SizedBox(height: 24),
+
+                AppSpacing.verticalXxl,
+
+                // 上传按钮
                 FilledButton(
                   onPressed: (_busy || _imagePath == null) ? null : _upload,
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.kleinBlue,
                     padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: AppShapes.radiusMdAll,
+                    ),
                   ),
-                  child: const Text('上传并填写信息'),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.cloud_upload_outlined),
+                      AppSpacing.horizontalSm,
+                      Text(
+                        _busy ? '上传中...' : '上传并填写信息',
+                        style: AppTypography.button,
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -834,4 +911,124 @@ class _PublishScreenState extends State<PublishScreen> {
 /// `_Step`：核心类型定义，承载该模块的主要职责。
 ///
 /// 主要用于统一该模块的核心能力与数据结构边界。
+/// 构建图片选择卡片
+Widget _buildSelectPhotoCard({
+  required IconData icon,
+  required String title,
+  required String subtitle,
+  required Color color,
+  VoidCallback? onTap,
+}) {
+  return Material(
+    color: Colors.transparent,
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: AppShapes.radiusXxlAll,
+      child: Container(
+        padding: const EdgeInsets.all(AppSpacing.xxl),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: AppShapes.radiusXxlAll,
+          border: Border.all(
+            color: color.withValues(alpha: 0.2),
+            width: 2,
+          ),
+        ),
+        child: Column(
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.15),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                icon,
+                size: 36,
+                color: color,
+              ),
+            ),
+            AppSpacing.verticalMd,
+            Text(
+              title,
+              style: AppTypography.cardTitle.copyWith(color: color),
+            ),
+            AppSpacing.verticalXs,
+            Text(
+              subtitle,
+              style: AppTypography.secondarySmall,
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// 构建已选图片预览卡片
+Widget _buildSelectedImagePreview() {
+  return Container(
+    decoration: BoxDecoration(
+      borderRadius: AppShapes.radiusXxlAll,
+      boxShadow: AppShapes.elevatedShadow,
+    ),
+    clipBehavior: Clip.antiAlias,
+    child: Column(
+      children: [
+        AspectRatio(
+          aspectRatio: 4 / 3,
+          child: Container(
+            color: AppColors.placeholder,
+            child: const Center(
+              child: Icon(
+                Icons.image,
+                size: 64,
+                color: AppColors.textMuted,
+              ),
+            ),
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          color: AppColors.cardWhite,
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppColors.successLight,
+                  borderRadius: AppShapes.radiusSmAll,
+                ),
+                child: const Icon(
+                  Icons.check_circle,
+                  color: AppColors.success,
+                  size: 24,
+                ),
+              ),
+              AppSpacing.horizontalMd,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '图片已选择',
+                      style: AppTypography.body,
+                    ),
+                    Text(
+                      '点击下方按钮继续编辑',
+                      style: AppTypography.secondarySmall,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
 enum _Step { select, uploading, edit }

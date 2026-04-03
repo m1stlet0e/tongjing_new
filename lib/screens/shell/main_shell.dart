@@ -76,7 +76,7 @@ class _MainShellState extends State<MainShell> {
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
                     _item(0, Icons.home_outlined, Icons.home, '首页'),
-                    _item(1, Icons.place_outlined, Icons.place, '机位'),
+                    _item(1, Icons.place_outlined, Icons.place, '机位', targetPath: '/map'),
                     _publish(),
                     _item(
                       3,
@@ -99,12 +99,19 @@ class _MainShellState extends State<MainShell> {
     int index,
     IconData outline,
     IconData filled,
-    String label,
-  ) {
+    String label, {
+    String? targetPath,
+  }) {
     final selected = widget.navigationShell.currentIndex == index;
     return Expanded(
       child: InkWell(
-        onTap: () => _goBranch(index),
+        onTap: () {
+          if (targetPath != null) {
+            context.push(targetPath);
+          } else {
+            _goBranch(index);
+          }
+        },
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [

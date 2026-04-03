@@ -88,12 +88,13 @@ GoRouter createAppRouter(AuthNotifier auth) {
           StatefulShellBranch(
             routes: [
               GoRoute(
-                path: '/map',
+                path: '/map-placeholder',
                 builder: (context, state) {
-                  final extra = state.extra;
-                  return MapScreen(
-                    initialTarget: extra is MapOpenArgs ? extra : null,
-                  );
+                  // 占位路由，点击底部导航栏"机位"时跳转到独立地图页面
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    context.push('/map');
+                  });
+                  return const SizedBox.shrink();
                 },
               ),
             ],
@@ -123,6 +124,18 @@ GoRouter createAppRouter(AuthNotifier auth) {
             ],
           ),
         ],
+      ),
+      // 独立地图页面，有返回按钮
+      GoRoute(
+        path: '/map',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) {
+          final extra = state.extra;
+          return _fadeSlidePage(
+            state,
+            MapScreen(initialTarget: extra is MapOpenArgs ? extra : null),
+          );
+        },
       ),
       GoRoute(
         path: '/login',

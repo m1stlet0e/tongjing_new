@@ -832,14 +832,11 @@ class _PhotoTile extends StatelessWidget {
                 AppSpacing.verticalXs,
                   Row(
                     children: [
-                      GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: null,
-                        child: InkResponse(
-                          onTap: interactionsEnabled ? onToggleLike : null,
-                          radius: 18,
-                          containedInkWell: false,
-                          child: Row(
+                      InkResponse(
+                        onTap: interactionsEnabled ? onToggleLike : null,
+                        radius: 18,
+                        containedInkWell: false,
+                        child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             TweenAnimationBuilder<double>(
@@ -873,32 +870,27 @@ class _PhotoTile extends StatelessWidget {
                             ),
                           ],
                         ),
-                        ),
                       ),
                       AppSpacing.horizontalLg,
-                      GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: null,
-                        child: InkResponse(
-                          onTap: interactionsEnabled ? onToggleFavorite : null,
-                          radius: 18,
-                          child: TweenAnimationBuilder<double>(
-                            duration: const Duration(milliseconds: 90),
-                            curve: Curves.easeOutBack,
-                            tween: Tween<double>(
-                              begin: 1,
-                              end: item.isFavorited ? 1.14 : 1.0,
-                            ),
-                            builder: (context, scale, child) {
-                              return Transform.scale(scale: scale, child: child);
-                            },
-                            child: Icon(
-                              item.isFavorited ? Icons.star : Icons.star_border,
-                              size: 14,
-                              color: item.isFavorited
-                                  ? AppColors.favorite
-                                  : AppColors.textMuted,
-                            ),
+                      InkResponse(
+                        onTap: interactionsEnabled ? onToggleFavorite : null,
+                        radius: 18,
+                        child: TweenAnimationBuilder<double>(
+                          duration: const Duration(milliseconds: 90),
+                          curve: Curves.easeOutBack,
+                          tween: Tween<double>(
+                            begin: 1,
+                            end: item.isFavorited ? 1.14 : 1.0,
+                          ),
+                          builder: (context, scale, child) {
+                            return Transform.scale(scale: scale, child: child);
+                          },
+                          child: Icon(
+                            item.isFavorited ? Icons.star : Icons.star_border,
+                            size: 14,
+                            color: item.isFavorited
+                                ? AppColors.favorite
+                                : AppColors.textMuted,
                           ),
                         ),
                       ),
