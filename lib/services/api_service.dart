@@ -471,7 +471,8 @@ class ApiService {
     });
   }
 
-  Future<void> photoPublish({
+  /// 发布成功返回新建作品 `id`，便于跳转详情。
+  Future<int> photoPublish({
     required String imageUrl,
     required String title,
     String? description,
@@ -497,12 +498,18 @@ class ApiService {
       method: 'POST',
       path: '/api/v1/photos',
       body: body,
-      authMode: ApiAuthMode.ifPresent,
+      authMode: ApiAuthMode.required,
     );
     final j = r.j;
     if (r.status >= 400 || j['success'] != true) {
       throw ApiException(j['error']?.toString() ?? '发布失败', r.status);
     }
+    final data = j['data'];
+    if (data is Map<String, dynamic>) {
+      final id = PhotoListItem.fromJson(data).id;
+      if (id > 0) return id;
+    }
+    throw ApiException('发布成功但未返回作品信息', r.status);
   }
 
   Future<bool> photoToggleLike(int id) async {
@@ -531,19 +538,6 @@ class ApiService {
     }
     final data = j['data'] as Map<String, dynamic>? ?? {};
     return data['is_favorited'] == true;
-  }
-
-  Future<void> photoAddComment(int id, String content) async {
-    final r = await _requestSpring(
-      method: 'POST',
-      path: '/api/v1/photos/$id/comments',
-      body: {'content': content},
-      authMode: ApiAuthMode.ifPresent,
-    );
-    final j = r.j;
-    if (r.status >= 400 || j['success'] != true) {
-      throw ApiException(j['error']?.toString() ?? '评论失败', r.status);
-    }
   }
 
   Future<void> photoDelete(int id) async {
@@ -636,7 +630,7 @@ class ApiService {
       method: 'PATCH',
       path: '/api/v1/users/me',
       body: body,
-      authMode: ApiAuthMode.ifPresent,
+      authMode: ApiAuthMode.required,
     );
     final j = r.j;
     if (r.status >= 400 || j['success'] != true) {
@@ -714,7 +708,7 @@ class ApiService {
       final r = await _requestSpring(
         method: 'POST',
         path: '/api/v1/users/$userId/follow',
-        authMode: ApiAuthMode.ifPresent,
+        authMode: ApiAuthMode.required,
       );
       final j = r.j;
       if (r.status >= 400 || j['success'] != true) {
@@ -876,7 +870,7 @@ class ApiService {
       method: 'POST',
       path: '/api/v1/spots',
       body: body,
-      authMode: ApiAuthMode.ifPresent,
+      authMode: ApiAuthMode.required,
     );
     final j = r.j;
     if (r.status >= 400 || j['success'] != true) {
@@ -944,7 +938,7 @@ class ApiService {
       method: 'POST',
       path: '/api/v1/equipment/user/$userId',
       body: {'equipment_id': equipmentId},
-      authMode: ApiAuthMode.ifPresent,
+      authMode: ApiAuthMode.required,
     );
     final j = r.j;
     if (r.status >= 400 || j['success'] != true) {
@@ -995,7 +989,7 @@ class ApiService {
         method: 'PUT',
         path: '/api/v1/shoot-plans',
         body: body,
-        authMode: ApiAuthMode.ifPresent,
+        authMode: ApiAuthMode.required,
       );
       final j = r.j;
       if (r.status >= 400 || j['success'] != true) {
@@ -1011,7 +1005,7 @@ class ApiService {
         method: 'PATCH',
         path: '/api/v1/shoot-plans/$planId',
         body: {'done': done},
-        authMode: ApiAuthMode.ifPresent,
+        authMode: ApiAuthMode.required,
       );
       final j = r.j;
       if (r.status >= 400 || j['success'] != true) {
@@ -1025,7 +1019,7 @@ class ApiService {
       final r = await _requestSpring(
         method: 'DELETE',
         path: '/api/v1/shoot-plans/$planId',
-        authMode: ApiAuthMode.ifPresent,
+        authMode: ApiAuthMode.required,
       );
       final j = r.j;
       if (r.status >= 400 || j['success'] != true) {
@@ -1076,7 +1070,7 @@ class ApiService {
         method: 'POST',
         path: '/api/v1/challenges/$challengeId/join',
         body: body,
-        authMode: ApiAuthMode.ifPresent,
+        authMode: ApiAuthMode.required,
       );
       final j = r.j;
       if (r.status >= 400 || j['success'] != true) {
@@ -1102,7 +1096,7 @@ class ApiService {
         method: 'POST',
         path: '/api/v1/ai/publish-assist',
         body: body,
-        authMode: ApiAuthMode.ifPresent,
+        authMode: ApiAuthMode.required,
       );
       final j = r.j;
       if (r.status >= 400 || j['success'] != true) {

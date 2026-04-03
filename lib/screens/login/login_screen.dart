@@ -14,6 +14,7 @@ import 'package:provider/provider.dart';
 import 'package:tongjing/config/app_config.dart';
 import 'package:tongjing/models/user_model.dart';
 import 'package:tongjing/providers/auth_provider.dart';
+import 'package:tongjing/services/analytics_service.dart';
 import 'package:tongjing/services/api_service.dart';
 import 'package:tongjing/services/cloudbase_gate.dart';
 import 'package:tongjing/services/wechat_auth_gate.dart';
@@ -130,6 +131,13 @@ class _LoginScreenState extends State<LoginScreen> {
         r = await auth.api.authLoginPhone(phone, code);
       }
       await auth.login(r.user, r.token);
+      await AnalyticsService.instance.track(
+        name: 'login_success',
+        userId: r.user.id,
+        properties: <String, dynamic>{
+          'method': AppConfig.cloudbaseUseNativeAuth ? 'cloudbase_phone' : 'phone_code',
+        },
+      );
       if (!mounted) return;
       context.go('/home');
     } on ApiException catch (e) {
@@ -153,8 +161,29 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final auth = context.read<AuthNotifier>();
       final code = await WechatAuthGate.requestAuthCode();
-      final r = await auth.api.authLoginOauth(provider: 'wechat', code: code);
-      await auth.login(r.user, r.token);
+      if (code.startsWith('mock_wechat_code_')) {
+        final mockUser = UserModel(
+          id: 999999,
+          username: '微信用户',
+          bio: '当前为开发环境 Mock 微信登录',
+          avatarUrl:
+              'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=256&q=80&auto=format&fit=crop',
+        );
+        await auth.login(
+          mockUser,
+          'mock_wechat_token_${DateTime.now().millisecondsSinceEpoch}',
+        );
+      } else {
+        final r = await auth.api.authLoginOauth(provider: 'wechat', code: code);
+        await auth.login(r.user, r.token);
+      }
+      await AnalyticsService.instance.track(
+        name: 'login_success',
+        userId: auth.user?.id,
+        properties: <String, dynamic>{
+          'method': code.startsWith('mock_wechat_code_') ? 'wechat_mock' : 'wechat_oauth',
+        },
+      );
       if (!mounted) return;
       context.go('/home');
     } on ApiException catch (e) {
@@ -296,6 +325,13 @@ class _LoginScreenState extends State<LoginScreen> {
                   : '开发环境：点击“获取验证码”后会在提示里显示开发码。',
               style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
             ),
+            if (AppConfig.enableWechatLogin && AppConfig.wechatMockLogin) ...[
+              const SizedBox(height: 6),
+              const Text(
+                '当前微信登录为 Mock 模式（未配置 APP_ID 也可联调）。',
+                style: TextStyle(fontSize: 11, color: AppColors.textMuted),
+              ),
+            ],
           ],
         ),
       ),

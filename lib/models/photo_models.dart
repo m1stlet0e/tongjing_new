@@ -27,6 +27,7 @@ class PhotoListItem {
     this.description,
     this.locationName,
     this.cameraModel,
+    this.lensModel,
     this.focalLength,
     this.aperture,
     this.shutterSpeed,
@@ -50,6 +51,7 @@ class PhotoListItem {
   final String? description;
   final String? locationName;
   final String? cameraModel;
+  final String? lensModel;
   final String? focalLength;
   final String? aperture;
   final String? shutterSpeed;
@@ -83,6 +85,7 @@ class PhotoListItem {
       description: json['description']?.toString(),
       locationName: json['location_name']?.toString(),
       cameraModel: json['camera_model']?.toString(),
+      lensModel: json['lens_model']?.toString(),
       focalLength: json['focal_length']?.toString(),
       aperture: json['aperture']?.toString(),
       shutterSpeed: json['shutter_speed']?.toString(),
@@ -128,6 +131,7 @@ class PhotoListItem {
     String? description,
     String? locationName,
     String? cameraModel,
+    String? lensModel,
     String? focalLength,
     String? aperture,
     String? shutterSpeed,
@@ -151,6 +155,7 @@ class PhotoListItem {
       description: description ?? this.description,
       locationName: locationName ?? this.locationName,
       cameraModel: cameraModel ?? this.cameraModel,
+      lensModel: lensModel ?? this.lensModel,
       focalLength: focalLength ?? this.focalLength,
       aperture: aperture ?? this.aperture,
       shutterSpeed: shutterSpeed ?? this.shutterSpeed,
@@ -180,6 +185,7 @@ class PhotoComment {
     this.username,
     this.avatarUrl,
     this.createdAt,
+    this.userId,
   });
 
   final int id;
@@ -188,13 +194,17 @@ class PhotoComment {
   final String? avatarUrl;
   final String? createdAt;
 
+  /// 评论作者用户 ID（详情接口 `comments[].user_id`）；客户端当前不展示评论，仅保留解析兼容。
+  final int? userId;
+
   factory PhotoComment.fromJson(Map<String, dynamic> json) {
     return PhotoComment(
-      id: (json['id'] as num).toInt(),
+      id: PhotoListItem._jsonInt(json['id']),
       content: json['content']?.toString() ?? '',
       username: json['username']?.toString(),
       avatarUrl: json['avatar_url']?.toString(),
       createdAt: json['created_at']?.toString(),
+      userId: PhotoListItem._jsonIntNullable(json['user_id']),
     );
   }
 }
@@ -210,6 +220,7 @@ class PhotoDetail extends PhotoListItem {
     super.description,
     super.locationName,
     super.cameraModel,
+    super.lensModel,
     super.focalLength,
     super.aperture,
     super.shutterSpeed,
@@ -252,6 +263,7 @@ class PhotoDetail extends PhotoListItem {
       description: base.description,
       locationName: base.locationName,
       cameraModel: base.cameraModel,
+      lensModel: base.lensModel,
       focalLength: base.focalLength,
       aperture: base.aperture,
       shutterSpeed: base.shutterSpeed,
@@ -282,6 +294,7 @@ class PhotoDetail extends PhotoListItem {
     String? description,
     String? locationName,
     String? cameraModel,
+    String? lensModel,
     String? focalLength,
     String? aperture,
     String? shutterSpeed,
@@ -309,6 +322,7 @@ class PhotoDetail extends PhotoListItem {
       description: description ?? this.description,
       locationName: locationName ?? this.locationName,
       cameraModel: cameraModel ?? this.cameraModel,
+      lensModel: lensModel ?? this.lensModel,
       focalLength: focalLength ?? this.focalLength,
       aperture: aperture ?? this.aperture,
       shutterSpeed: shutterSpeed ?? this.shutterSpeed,

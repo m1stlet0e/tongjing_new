@@ -11,7 +11,9 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:tongjing/models/photo_models.dart';
 import 'package:tongjing/providers/auth_provider.dart';
+import 'package:tongjing/services/photo_state_sync_bus.dart';
 import 'package:tongjing/theme/app_colors.dart';
+import 'package:tongjing/utils/photo_recipe_display.dart';
 import 'package:tongjing/utils/remote_image.dart';
 
 /// `FavoritesScreen`：页面组件，负责构建界面布局并响应用户操作。
@@ -28,8 +30,63 @@ class FavoritesScreen extends StatefulWidget {
 ///
 /// 主要用于统一该模块的核心能力与数据结构边界。
 class _FavoritesScreenState extends State<FavoritesScreen> {
+  final _syncBus = PhotoStateSyncBus.instance;
   List<PhotoListItem> _list = [];
   bool _loading = true;
+
+  Widget _buildLoginPrompt() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.bookmark_border_rounded,
+              size: 56,
+              color: AppColors.textMuted,
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              '登录后可查看收藏作品',
+              style: TextStyle(
+                fontSize: 15,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 14),
+            FilledButton(
+              onPressed: () => context.push('/login'),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.kleinBlue,
+              ),
+              child: const Text('去登录'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return ListView(
+      children: const [
+        SizedBox(height: 120),
+        Icon(
+          Icons.bookmark_border_rounded,
+          size: 54,
+          color: AppColors.textMuted,
+        ),
+        SizedBox(height: 12),
+        Center(
+          child: Text(
+            '暂无收藏',
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
+        ),
+      ],
+    );
+  }
 
   @override
   /// 组件初始化阶段执行一次，用于准备首屏数据与监听器。
@@ -37,7 +94,46 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   /// 方法：`initState`。
   void initState() {
     super.initState();
+    _syncBus.addListener(_onPhotoStateSync);
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  @override
+  void dispose() {
+    _syncBus.removeListener(_onPhotoStateSync);
+    super.dispose();
+  }
+
+  void _onPhotoStateSync() {
+    final e = _syncBus.lastEvent;
+    if (!mounted || e == null) return;
+    final idx = _list.indexWhere((x) => x.id == e.photoId);
+    setState(() {
+      if (idx >= 0) {
+        final before = _list[idx];
+        final next = before.copyWith(
+          isLiked: e.isLiked ?? before.isLiked,
+          likesCount: e.likesCount ?? before.likesCount,
+          isFavorited: e.isFavorited ?? before.isFavorited,
+          favoritesCount: e.favoritesCount ?? before.favoritesCount,
+        );
+        if (e.isFavorited == false) {
+          _list.removeAt(idx);
+        } else {
+          _list[idx] = next;
+        }
+        return;
+      }
+      if (e.isFavorited == true && e.photo != null) {
+        _list.insert(0, e.photo!);
+        return;
+      }
+      if (e.isFavorited == true) {
+        _load();
+      } else {
+        // no-op
+      }
+    });
   }
 
   Future<void> _load() async {
@@ -63,13 +159,13 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         context.select<AuthNotifier, bool>((a) => a.isAuthenticated);
     if (!isLoggedIn) {
       return Scaffold(
-        appBar: AppBar(title: const Text('收藏')),
-        body: Center(
-          child: FilledButton(
-            onPressed: () => context.push('/login'),
-            child: const Text('请先登录'),
-          ),
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          title: const Text('收藏'),
+          backgroundColor: Colors.white,
+          foregroundColor: AppColors.textPrimary,
         ),
+        body: _buildLoginPrompt(),
       );
     }
 
@@ -85,7 +181,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
           : RefreshIndicator(
               onRefresh: _load,
               child: _list.isEmpty
-                  ? ListView(children: const [SizedBox(height: 120), Center(child: Text('暂无收藏'))])
+                  ? _buildEmptyState()
                   : GridView.builder(
                       padding: const EdgeInsets.all(12),
                       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -100,17 +196,19 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                         return GestureDetector(
                           onTap: () async {
                             await context.push('/photo/${p.id}');
-                            if (!context.mounted) return;
-                            await _load();
-                            if (!context.mounted) return;
-                            await context.read<AuthNotifier>().refreshProfile();
                           },
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(8),
-                            child: CachedNetworkImage(
-                              imageUrl: p.imageUrl,
-                              fit: BoxFit.cover,
-                              httpHeaders: kRemoteImageHttpHeaders,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                CachedNetworkImage(
+                                  imageUrl: p.imageUrl,
+                                  fit: BoxFit.cover,
+                                  httpHeaders: kRemoteImageHttpHeaders,
+                                ),
+                                PhotoGridCaptionOverlay(photo: p),
+                              ],
                             ),
                           ),
                         );

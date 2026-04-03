@@ -18,8 +18,11 @@ import 'package:geolocator/geolocator.dart';
 import 'package:tongjing/config/app_config.dart';
 import 'package:tongjing/models/photo_models.dart';
 import 'package:tongjing/providers/auth_provider.dart';
+import 'package:tongjing/screens/map/location_photos_screen.dart';
 import 'package:tongjing/services/api_service.dart';
 import 'package:tongjing/theme/app_colors.dart';
+import 'package:tongjing/theme/app_shapes.dart';
+import 'package:tongjing/utils/location_normalizer.dart';
 import 'package:tongjing/utils/remote_image.dart';
 
 /// 从作品详情等跳转地图时传入 [GoRouterState.extra]，用于定位与搜索预填。
@@ -93,8 +96,21 @@ class _MapScreenState extends State<MapScreen> {
       }
     }
     if (best != null && bestM <= _mapTapPickRadiusM && mounted) {
-      context.push('/photo/${best.id}');
+      _openPhotoDetail(best.id);
     }
+  }
+
+  void _openPhotoDetail(int id) {
+    if (!mounted || id <= 0) return;
+    context.push('/photo/$id');
+  }
+
+  List<PhotoListItem> _photosByLocationName(String locationName) {
+    final key = normalizeLocationName(locationName);
+    if (key.isEmpty) return const <PhotoListItem>[];
+    return _markers
+        .where((p) => normalizeLocationName(p.locationName) == key)
+        .toList();
   }
 
   void _onMapTapped(LatLng point) {
@@ -152,16 +168,48 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> _locate() async {
-    final perm = await Geolocator.checkPermission();
-    if (perm == LocationPermission.denied) {
-      await Geolocator.requestPermission();
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('定位服务未开启，请先开启系统定位服务')),
+        );
+        return;
+      }
+
+      var perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.denied) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('未授予定位权限，无法定位到当前位置')),
+        );
+        return;
+      }
+      if (perm == LocationPermission.deniedForever) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('定位权限被永久拒绝，请在系统设置中开启')),
+        );
+        return;
+      }
+
+      final pos = await Geolocator.getCurrentPosition();
+      final ll = LatLng(pos.latitude, pos.longitude);
+      if (!mounted) return;
+      setState(() => _center = ll);
+      _reloadDebounce?.cancel();
+      _mapController.move(ll, 13);
+      _load();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('定位失败，请稍后重试')),
+      );
     }
-    final pos = await Geolocator.getCurrentPosition();
-    final ll = LatLng(pos.latitude, pos.longitude);
-    setState(() => _center = ll);
-    _reloadDebounce?.cancel();
-    _mapController.move(ll, 13);
-    _load();
   }
 
   void _scheduleLoad() {
@@ -172,6 +220,7 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
@@ -184,18 +233,22 @@ class _MapScreenState extends State<MapScreen> {
         radiusKm: _radiusKm,
       );
       final pop = await api.mapPopularSpots();
+      if (!mounted) return;
       setState(() {
         _markers = photos;
         _popular = pop;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = e is ApiException ? e.message : '地图数据加载失败';
         _markers = [];
         _popular = [];
       });
     } finally {
-      setState(() => _loading = false);
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -247,8 +300,8 @@ class _MapScreenState extends State<MapScreen> {
                       vertical: 10,
                     ),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFEAF0FF),
-                      borderRadius: BorderRadius.circular(10),
+                      color: AppColors.infoLight,
+                      borderRadius: AppShapes.radiusLgAll,
                     ),
                     child: const Text(
                       '点击地图可选中附近作品进入详情；缩略图与列表亦可点击。拖动地图后稍停会自动刷新。',
@@ -280,7 +333,7 @@ class _MapScreenState extends State<MapScreen> {
             Expanded(
               flex: 3,
               child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                borderRadius: AppShapes.bottomSheetRadius,
                 child: FlutterMap(
                   mapController: _mapController,
                   options: MapOptions(
@@ -313,14 +366,14 @@ class _MapScreenState extends State<MapScreen> {
                               child: Material(
                                 color: Colors.transparent,
                                 child: InkWell(
-                                  onTap: () => context.push('/photo/${p.id}'),
+                                  onTap: () => _openPhotoDetail(p.id),
                                   customBorder: const CircleBorder(),
                                   child: SizedBox(
                                     width: 56,
                                     height: 56,
                                     child: Center(
                                       child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(8),
+                                        borderRadius: AppShapes.radiusMdAll,
                                         child: CachedNetworkImage(
                                           imageUrl: p.imageUrl,
                                           httpHeaders: kRemoteImageHttpHeaders,
@@ -421,17 +474,17 @@ class _MapScreenState extends State<MapScreen> {
                                 trailing: const Icon(Icons.chevron_right,
                                     color: AppColors.textMuted),
                                 onTap: () {
-                                  final nameNorm = name.trim();
-                                  PhotoListItem? byName;
-                                  for (final p in _markers) {
-                                    final ln = p.locationName?.trim() ?? '';
-                                    if (ln.isNotEmpty && ln == nameNorm) {
-                                      byName = p;
-                                      break;
-                                    }
-                                  }
-                                  if (byName != null) {
-                                    context.push('/photo/${byName.id}');
+                                  final list = _photosByLocationName(name);
+                                  if (list.isNotEmpty) {
+                                    context.push(
+                                      '/map/location-photos',
+                                      extra: MapLocationPhotosArgs(
+                                        locationName: name.trim().isEmpty
+                                            ? '该地点作品'
+                                            : name.trim(),
+                                        photos: list,
+                                      ),
+                                    );
                                     return;
                                   }
                                   final lat =
@@ -453,7 +506,7 @@ class _MapScreenState extends State<MapScreen> {
                             margin: const EdgeInsets.only(bottom: 8),
                             child: ListTile(
                               leading: ClipRRect(
-                                borderRadius: BorderRadius.circular(6),
+                                borderRadius: AppShapes.radiusSmAll,
                                 child: CachedNetworkImage(
                                   imageUrl: p.imageUrl,
                                   httpHeaders: kRemoteImageHttpHeaders,
@@ -477,7 +530,7 @@ class _MapScreenState extends State<MapScreen> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
-                              onTap: () => context.push('/photo/${p.id}'),
+                              onTap: () => _openPhotoDetail(p.id),
                             ),
                           );
                         },

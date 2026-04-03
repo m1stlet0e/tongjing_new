@@ -6,7 +6,9 @@ import 'package:tongjing/models/photo_models.dart';
 import 'package:tongjing/models/user_model.dart';
 import 'package:tongjing/providers/auth_provider.dart';
 import 'package:tongjing/router/photo_gallery_extra.dart';
+import 'package:tongjing/services/analytics_service.dart';
 import 'package:tongjing/services/api_service.dart';
+import 'package:tongjing/services/photo_state_sync_bus.dart';
 import 'package:tongjing/theme/app_colors.dart';
 import 'package:tongjing/utils/remote_image.dart';
 import 'package:tongjing/widgets/gear_card.dart';
@@ -22,6 +24,7 @@ class AuthorProfileScreen extends StatefulWidget {
 }
 
 class _AuthorProfileScreenState extends State<AuthorProfileScreen> {
+  final _syncBus = PhotoStateSyncBus.instance;
   UserModel? _user;
   List<PhotoListItem> _photos = [];
   List<Map<String, dynamic>> _gear = [];
@@ -32,7 +35,29 @@ class _AuthorProfileScreenState extends State<AuthorProfileScreen> {
   @override
   void initState() {
     super.initState();
+    _syncBus.addListener(_onPhotoStateSync);
     WidgetsBinding.instance.addPostFrameCallback((_) => _load(reset: true));
+  }
+
+  @override
+  void dispose() {
+    _syncBus.removeListener(_onPhotoStateSync);
+    super.dispose();
+  }
+
+  void _onPhotoStateSync() {
+    final e = _syncBus.lastEvent;
+    if (!mounted || e == null) return;
+    final idx = _photos.indexWhere((x) => x.id == e.photoId);
+    if (idx < 0) return;
+    final before = _photos[idx];
+    final next = before.copyWith(
+      isLiked: e.isLiked ?? before.isLiked,
+      likesCount: e.likesCount ?? before.likesCount,
+      isFavorited: e.isFavorited ?? before.isFavorited,
+      favoritesCount: e.favoritesCount ?? before.favoritesCount,
+    );
+    setState(() => _photos[idx] = next);
   }
 
   Future<void> _load({bool reset = false}) async {
@@ -99,7 +124,7 @@ class _AuthorProfileScreenState extends State<AuthorProfileScreen> {
             ),
           )
         : await router.push('/photo/${p.id}');
-    if (!context.mounted) return;
+    if (!mounted) return;
     if (r == true) await _load(reset: true);
   }
 
@@ -110,7 +135,14 @@ class _AuthorProfileScreenState extends State<AuthorProfileScreen> {
       return;
     }
     try {
-      await auth.api.usersFollowToggle(widget.userId);
+      final nowFollowing = await auth.api.usersFollowToggle(widget.userId);
+      await AnalyticsService.instance.track(
+        name: nowFollowing ? 'follow_on' : 'follow_off',
+        userId: auth.user?.id,
+        properties: <String, dynamic>{'target_user_id': widget.userId},
+      );
+      if (!mounted) return;
+      await auth.refreshProfile();
       if (!mounted) return;
       final u = await auth.api.usersPublic(widget.userId);
       if (mounted) setState(() => _user = u);
@@ -166,9 +198,32 @@ class _AuthorProfileScreenState extends State<AuthorProfileScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(_error!, textAlign: TextAlign.center),
-                        const SizedBox(height: 16),
-                        TextButton(onPressed: () => _load(reset: true), child: const Text('重试')),
+                        const Icon(Icons.cloud_off_outlined, size: 48, color: AppColors.textMuted),
+                        const SizedBox(height: 12),
+                        const Text(
+                          '加载失败',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _error!,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: AppColors.textSecondary,
+                            height: 1.35,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        FilledButton(
+                          onPressed: () => _load(reset: true),
+                          style: FilledButton.styleFrom(backgroundColor: AppColors.kleinBlue),
+                          child: const Text('重试'),
+                        ),
                       ],
                     ),
                   ),

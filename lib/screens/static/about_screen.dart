@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:tongjing/config/app_config.dart';
 import 'package:tongjing/support/legal_urls.dart';
 import 'package:tongjing/theme/app_colors.dart';
+import 'package:tongjing/utils/top_notice.dart';
 
-/// 关于同镜：版本号、简介与官网入口。
 class AboutScreen extends StatefulWidget {
   const AboutScreen({super.key});
 
@@ -25,69 +26,122 @@ class _AboutScreenState extends State<AboutScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final ver = _info == null ? '…' : '${_info!.version}（${_info!.buildNumber}）';
+    final version = _info == null ? '...' : '${_info!.version}+${_info!.buildNumber}';
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: const Color(0xFFF4F7FF),
       appBar: AppBar(
         title: const Text('关于同镜'),
-        backgroundColor: Colors.white,
+        backgroundColor: const Color(0xFFF4F7FF),
         foregroundColor: AppColors.textPrimary,
+        elevation: 0,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              '同镜',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                color: AppColors.kleinBlue,
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              gradient: const LinearGradient(
+                colors: [Color(0xFF0C2F79), Color(0xFF2B59D9)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              '版本 $ver',
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: AppColors.textMuted),
-            ),
-            const SizedBox(height: 28),
-            const Text(
-              '同镜是面向摄影爱好者与创作者的社区与机位工具类应用，支持作品浏览与发布、地图机位探索、拍摄计划与个人内容管理。数据服务基于腾讯云开发（CloudBase）。',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.textSecondary, height: 1.55),
-            ),
-            const SizedBox(height: 28),
-            if (AppConfig.legalHomeUri != null)
-              OutlinedButton(
-                onPressed: () => openLegalPage(
-                  context,
-                  AppConfig.legalHomeUri,
-                  '未配置官网地址',
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '同镜 Tongjing',
+                  style: TextStyle(color: Colors.white, fontSize: 23, fontWeight: FontWeight.w800),
                 ),
-                child: const Text('访问官方网站'),
-              ),
-            const SizedBox(height: 12),
-            TextButton(
-              onPressed: () => openLegalPage(
-                context,
-                AppConfig.legalPrivacyUri,
-                '上架请在构建参数中配置 LEGAL_SITE_BASE（HTTPS 官网根地址）',
-              ),
-              child: const Text('隐私政策'),
+                const SizedBox(height: 8),
+                Text(
+                  '版本 $version',
+                  style: const TextStyle(color: Color(0xFFD7E3FF)),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  '为摄影创作者打造的内容社区与机位工具。',
+                  style: TextStyle(color: Color(0xFFD7E3FF), height: 1.45),
+                ),
+              ],
             ),
-            TextButton(
-              onPressed: () => openLegalPage(
-                context,
-                AppConfig.legalTermsUri,
-                '上架请在构建参数中配置 LEGAL_SITE_BASE（HTTPS 官网根地址）',
-              ),
-              child: const Text('用户协议'),
+          ),
+          const SizedBox(height: 12),
+          _ActionItem(
+            icon: Icons.copy_all_outlined,
+            title: '复制版本号',
+            subtitle: version,
+            onTap: () {
+              Clipboard.setData(ClipboardData(text: version));
+              showTopNotice(context, '版本号已复制');
+            },
+          ),
+          _ActionItem(
+            icon: Icons.language_outlined,
+            title: '访问官网',
+            subtitle: AppConfig.legalHomeUri?.toString() ?? '未配置',
+            onTap: () => openLegalPage(context, AppConfig.legalHomeUri, '未配置官网地址'),
+          ),
+          _ActionItem(
+            icon: Icons.policy_outlined,
+            title: '隐私政策',
+            subtitle: '查看完整隐私条款',
+            onTap: () => openLegalPage(
+              context,
+              AppConfig.legalPrivacyUri,
+              '上架请配置 LEGAL_SITE_BASE',
             ),
-          ],
+          ),
+          _ActionItem(
+            icon: Icons.description_outlined,
+            title: '用户协议',
+            subtitle: '查看完整服务协议',
+            onTap: () => openLegalPage(
+              context,
+              AppConfig.legalTermsUri,
+              '上架请配置 LEGAL_SITE_BASE',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActionItem extends StatelessWidget {
+  const _ActionItem({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 10),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: const BorderSide(color: Color(0xFFE2E8FF)),
+      ),
+      child: ListTile(
+        onTap: onTap,
+        leading: Icon(icon, color: AppColors.kleinBlue),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+        subtitle: Text(
+          subtitle,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
+        trailing: const Icon(Icons.chevron_right, color: AppColors.textMuted),
       ),
     );
   }

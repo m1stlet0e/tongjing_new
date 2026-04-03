@@ -5,19 +5,29 @@
 //
 // 说明：该文件已补充中文注释，便于后续维护与交接。
 
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:tongjing/screens/map/map_screen.dart' show MapOpenArgs;
 import 'package:tongjing/models/photo_models.dart';
 import 'package:tongjing/models/plan_item.dart';
 import 'package:tongjing/providers/auth_provider.dart';
 import 'package:tongjing/router/app_router.dart';
+import 'package:tongjing/services/analytics_service.dart';
 import 'package:tongjing/services/api_service.dart';
+import 'package:tongjing/services/photo_state_sync_bus.dart';
 import 'package:tongjing/services/plan_store.dart';
 import 'package:tongjing/theme/app_colors.dart';
+import 'package:tongjing/theme/app_spacing.dart';
+import 'package:tongjing/theme/app_shapes.dart';
+import 'package:tongjing/utils/photo_recipe_display.dart';
 import 'package:tongjing/utils/remote_image.dart';
+import 'package:tongjing/utils/top_notice.dart';
 
 /// 作品详情：黑底 + [BoxFit.contain] 完整显示照片（不裁切），底部可拖拽信息抽屉。
 ///
@@ -143,11 +153,14 @@ class _PhotoDetailPage extends StatefulWidget {
 class _PhotoDetailPageState extends State<_PhotoDetailPage>
     with AutomaticKeepAliveClientMixin {
   final _planStore = PlanStore();
+  final _syncBus = PhotoStateSyncBus.instance;
   final TransformationController _imageTransform = TransformationController();
   PhotoDetail? _photo;
   bool _loading = true;
   String? _error;
   bool _inPlan = false;
+  bool _likeBusy = false;
+  bool _favoriteBusy = false;
 
   /// 与底部抽屉初始高度比例大致对齐，照片在「可见区」内居中（类相册应用习惯）。
   static const double _imageBottomReserveFraction = 0.11;
@@ -163,13 +176,29 @@ class _PhotoDetailPageState extends State<_PhotoDetailPage>
   @override
   void initState() {
     super.initState();
+    _syncBus.addListener(_onPhotoStateSync);
     _fetch();
   }
 
   @override
   void dispose() {
+    _syncBus.removeListener(_onPhotoStateSync);
     _imageTransform.dispose();
     super.dispose();
+  }
+
+  void _onPhotoStateSync() {
+    final e = _syncBus.eventFor(widget.photoId);
+    if (!mounted || e == null || _photo == null) return;
+    final p = _photo!;
+    setState(() {
+      _photo = p.copyWith(
+        isLiked: e.isLiked ?? p.isLiked,
+        likesCount: e.likesCount ?? p.likesCount,
+        isFavorited: e.isFavorited ?? p.isFavorited,
+        favoritesCount: e.favoritesCount ?? p.favoritesCount,
+      );
+    });
   }
 
   /// 未放大时不允许拖动照片（避免与相册左右滑抢手势、也避免 1 倍下乱移画面）。
@@ -189,7 +218,16 @@ class _PhotoDetailPageState extends State<_PhotoDetailPage>
     try {
       final api = context.read<AuthNotifier>().api;
       final p = await api.photoDetail(widget.photoId);
-      setState(() => _photo = p);
+      final e = _syncBus.eventFor(widget.photoId);
+      final patched = e == null
+          ? p
+          : p.copyWith(
+              isLiked: e.isLiked ?? p.isLiked,
+              likesCount: e.likesCount ?? p.likesCount,
+              isFavorited: e.isFavorited ?? p.isFavorited,
+              favoritesCount: e.favoritesCount ?? p.favoritesCount,
+            );
+      setState(() => _photo = patched);
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {
@@ -204,27 +242,94 @@ class _PhotoDetailPageState extends State<_PhotoDetailPage>
     GoRouter.of(root).push('/my-plans');
   }
 
+  Widget _buildRecipeParamRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 72,
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.textMuted,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 13,
+                color: AppColors.textSecondary,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _openLocationOnMap() {
     final p = _photo;
     if (p == null) return;
     final name = p.locationName?.trim();
-    if (name == null || name.isEmpty) return;
+    final hasName = name != null && name.isNotEmpty;
     final lat = p.latitude;
     final lng = p.longitude;
-    if (lat != null && lng != null) {
-      context.go(
-        '/map',
-        extra: MapOpenArgs(lat: lat, lng: lng, hintName: name),
+    final hasCoord = lat != null && lng != null;
+
+    if (!hasCoord && !hasName) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('该作品未标注地点与坐标')),
       );
-    } else {
-      context.go('/map');
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('该作品未标注坐标，已打开地图，可在列表中浏览附近作品')),
-        );
-      });
+      return;
     }
+    if (hasCoord) {
+      final auth = context.read<AuthNotifier>();
+      unawaited(
+        AnalyticsService.instance.track(
+          name: 'open_map_from_photo',
+          userId: auth.user?.id,
+          properties: <String, dynamic>{'photo_id': p.id, 'has_coord': true},
+        ),
+      );
+      context.push(
+        '/map',
+        extra: MapOpenArgs(
+          lat: lat,
+          lng: lng,
+          hintName: hasName ? name : null,
+        ),
+      );
+      if (!hasName) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('已按坐标打开地图，可查看附近作品')),
+          );
+        });
+      }
+      return;
+    }
+    context.push('/map');
+    final auth = context.read<AuthNotifier>();
+    unawaited(
+      AnalyticsService.instance.track(
+        name: 'open_map_from_photo',
+        userId: auth.user?.id,
+        properties: <String, dynamic>{'photo_id': p.id, 'has_coord': false},
+      ),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('该作品未标注坐标，已打开地图，可在列表中浏览附近作品')),
+      );
+    });
   }
 
   Future<void> _syncPlanFlag() async {
@@ -252,6 +357,13 @@ class _PhotoDetailPageState extends State<_PhotoDetailPage>
     final p = _photo;
     if (p == null) return;
     try {
+      final brandModel = <String>[];
+      final cb = p.cameraBrand?.trim();
+      final cm = p.cameraModel?.trim();
+      if (cb != null && cb.isNotEmpty) brandModel.add(cb);
+      if (cm != null && cm.isNotEmpty) brandModel.add(cm);
+      final cameraLine =
+          '${photoParamRecorded(brandModel.join(' '))} | ${photoParamRecorded(p.lensModel)} | ${photoParamRecorded(p.focalLength)} ${photoApertureRecorded(p.aperture)}';
       await _planStore.upsert(
         auth.api,
         PlanItem(
@@ -259,19 +371,18 @@ class _PhotoDetailPageState extends State<_PhotoDetailPage>
           title: p.title ?? '未命名拍摄计划',
           location: p.locationName ?? '未标记机位',
           imageUrl: p.imageUrl,
-          cameraLine:
-              '${p.cameraModel ?? '-'} | ${p.focalLength ?? '-'} | f/${p.aperture ?? '-'}',
+          cameraLine: cameraLine,
           tips: p.shootingTips,
           createdAt: DateTime.now().toIso8601String(),
         ),
       );
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      showTopNotice(context, e.message, error: true);
       return;
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('加入失败：$e')));
+      showTopNotice(context, '加入失败：$e', error: true);
       return;
     }
     if (!mounted) return;
@@ -293,22 +404,58 @@ class _PhotoDetailPageState extends State<_PhotoDetailPage>
       context.push('/login');
       return;
     }
+    if (_likeBusy || _photo == null) return;
+    final prev = _photo!;
+    final optimisticLiked = !prev.isLiked;
+    final optimisticLikes =
+        (prev.likesCount + (optimisticLiked ? 1 : -1)).clamp(0, 1 << 30);
+    setState(() {
+      _likeBusy = true;
+      _photo = prev.copyWith(
+        isLiked: optimisticLiked,
+        likesCount: optimisticLikes,
+      );
+    });
+    HapticFeedback.lightImpact();
     try {
       final liked = await auth.api.photoToggleLike(widget.photoId);
+      if (!mounted) return;
+      final base = prev;
+      final nextLikes = (base.likesCount + (liked ? 1 : -1)).clamp(0, 1 << 30);
       setState(() {
-        if (_photo != null) {
-          final prev = _photo!;
-          final delta = liked == prev.isLiked ? 0 : (liked ? 1 : -1);
-          _photo = prev.copyWith(
-            isLiked: liked,
-            likesCount: (prev.likesCount + delta).clamp(0, 1 << 30),
-          );
-        }
+        _photo = base.copyWith(
+          isLiked: liked,
+          likesCount: nextLikes,
+        );
+        _likeBusy = false;
       });
-      if (mounted) await context.read<AuthNotifier>().refreshProfile();
+      await AnalyticsService.instance.track(
+        name: liked ? 'photo_like_on' : 'photo_like_off',
+        userId: auth.user?.id,
+        properties: <String, dynamic>{'photo_id': widget.photoId},
+      );
+      _syncBus.emit(
+        PhotoStateSyncEvent(
+          photoId: widget.photoId,
+          isLiked: liked,
+          likesCount: nextLikes,
+          photo: base.copyWith(isLiked: liked, likesCount: nextLikes),
+        ),
+      );
     } on ApiException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        setState(() {
+          _photo = prev;
+          _likeBusy = false;
+        });
+        showTopNotice(context, e.message, error: true);
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _photo = prev;
+          _likeBusy = false;
+        });
       }
     }
   }
@@ -319,26 +466,63 @@ class _PhotoDetailPageState extends State<_PhotoDetailPage>
       context.push('/login');
       return;
     }
+    if (_favoriteBusy || _photo == null) return;
+    final prev = _photo!;
+    final optimisticFav = !prev.isFavorited;
+    final optimisticCount =
+        (prev.favoritesCount + (optimisticFav ? 1 : -1)).clamp(0, 1 << 30);
+    setState(() {
+      _favoriteBusy = true;
+      _photo = prev.copyWith(
+        isFavorited: optimisticFav,
+        favoritesCount: optimisticCount,
+      );
+    });
+    HapticFeedback.lightImpact();
     try {
       final fav = await auth.api.photoToggleFavorite(widget.photoId);
-      if (!mounted || _photo == null) return;
-      final prev = _photo!;
-      final delta = fav == prev.isFavorited ? 0 : (fav ? 1 : -1);
-      setState(() {
-        _photo = prev.copyWith(
-          isFavorited: fav,
-          favoritesCount: (prev.favoritesCount + delta).clamp(0, 1 << 30),
-        );
-      });
-      await _syncPlanFlag();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(fav ? '已加入收藏' : '已取消收藏')),
+      final base = prev;
+      final delta = fav ? 1 : -1;
+      setState(() {
+        _photo = base.copyWith(
+          isFavorited: fav,
+          favoritesCount: (base.favoritesCount + delta).clamp(0, 1 << 30),
+        );
+        _favoriteBusy = false;
+      });
+      await AnalyticsService.instance.track(
+        name: fav ? 'photo_favorite_on' : 'photo_favorite_off',
+        userId: auth.user?.id,
+        properties: <String, dynamic>{'photo_id': widget.photoId},
       );
-      if (mounted) await context.read<AuthNotifier>().refreshProfile();
+      _syncBus.emit(
+        PhotoStateSyncEvent(
+          photoId: widget.photoId,
+          isFavorited: fav,
+          favoritesCount: (base.favoritesCount + delta).clamp(0, 1 << 30),
+          photo: base.copyWith(
+            isFavorited: fav,
+            favoritesCount: (base.favoritesCount + delta).clamp(0, 1 << 30),
+          ),
+        ),
+      );
+      if (!mounted) return;
+      showTopNotice(context, fav ? '已加入收藏' : '已取消收藏');
     } on ApiException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        setState(() {
+          _photo = prev;
+          _favoriteBusy = false;
+        });
+        showTopNotice(context, e.message, error: true);
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _photo = prev;
+          _favoriteBusy = false;
+        });
       }
     }
   }
@@ -378,6 +562,59 @@ class _PhotoDetailPageState extends State<_PhotoDetailPage>
     }
   }
 
+  /// 分享作品
+  Future<void> _sharePhoto() async {
+    final p = _photo;
+    if (p == null) return;
+
+    final title = p.title ?? '同镜作品';
+    final author = p.username ?? '匿名作者';
+    final location = p.locationName;
+
+    // 构建分享文本
+    final buffer = StringBuffer();
+    buffer.writeln('「$title」');
+    buffer.writeln('作者：$author');
+    if (location != null && location.isNotEmpty) {
+      buffer.writeln('地点：$location');
+    }
+    // 添加相机参数
+    if (p.cameraModel != null && p.cameraModel!.isNotEmpty) {
+      buffer.write('设备：${p.cameraModel}');
+      if (p.focalLength != null && p.focalLength!.isNotEmpty) {
+        buffer.write(' ${p.focalLength}');
+      }
+      if (p.aperture != null && p.aperture!.isNotEmpty) {
+        buffer.write(' f/${p.aperture}');
+      }
+      if (p.iso != null) {
+        buffer.write(' ISO ${p.iso}');
+      }
+      buffer.writeln();
+    }
+    buffer.writeln();
+    buffer.write('来自同镜摄影社区');
+
+    // 使用 share_plus 分享
+    await Share.share(
+      buffer.toString(),
+      subject: title,
+    );
+
+    // 埋点
+    if (mounted) {
+      final auth = context.read<AuthNotifier>();
+      await AnalyticsService.instance.track(
+        name: 'photo_share',
+        userId: auth.user?.id,
+        properties: <String, dynamic>{
+          'photo_id': widget.photoId,
+          'photo_title': title,
+        },
+      );
+    }
+  }
+
   Widget _buildAuthorRow(BuildContext context) {
     final p = _photo!;
     final name = p.username ?? '匿名作者';
@@ -397,7 +634,7 @@ class _PhotoDetailPageState extends State<_PhotoDetailPage>
           children: [
             CircleAvatar(
               radius: 18,
-              backgroundColor: const Color(0xFFE8ECF5),
+              backgroundColor: AppColors.background,
               child: Text(
                 name.isNotEmpty
                     ? String.fromCharCode(name.runes.first)
@@ -449,11 +686,12 @@ class _PhotoDetailPageState extends State<_PhotoDetailPage>
           transformationController: _imageTransform,
           onInteractionUpdate: (_) => _snapImageTransformIfNotZoomed(),
           onInteractionEnd: (_) => _snapImageTransformIfNotZoomed(),
-          panAxis: PanAxis.free,
+          panEnabled: false,
+          panAxis: PanAxis.aligned,
           minScale: 1,
           maxScale: 5,
           clipBehavior: Clip.hardEdge,
-          boundaryMargin: const EdgeInsets.all(80),
+          boundaryMargin: EdgeInsets.zero,
           child: SizedBox(
             width: w,
             height: h,
@@ -488,11 +726,11 @@ class _PhotoDetailPageState extends State<_PhotoDetailPage>
   Widget _buildActionBar({required bool isMine}) {
     final p = _photo!;
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: AppSpacing.xxs),
       decoration: BoxDecoration(
-        color: const Color(0xFFF3F5FA),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        color: AppColors.placeholderLight,
+        borderRadius: AppShapes.radiusXxlAll,
+        border: Border.all(color: AppColors.divider),
       ),
       child: Row(
         children: [
@@ -506,10 +744,21 @@ class _PhotoDetailPageState extends State<_PhotoDetailPage>
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   child: Column(
                     children: [
-                      Icon(
-                        p.isLiked ? Icons.favorite : Icons.favorite_border,
-                        color: p.isLiked ? Colors.redAccent : AppColors.textSecondary,
-                        size: 24,
+                      TweenAnimationBuilder<double>(
+                        duration: const Duration(milliseconds: 90),
+                        curve: Curves.easeOutBack,
+                        tween: Tween<double>(
+                          begin: 1,
+                          end: p.isLiked ? 1.14 : 1.0,
+                        ),
+                        builder: (context, scale, child) {
+                          return Transform.scale(scale: scale, child: child);
+                        },
+                        child: Icon(
+                          p.isLiked ? Icons.favorite : Icons.favorite_border,
+                          color: p.isLiked ? Colors.redAccent : AppColors.textSecondary,
+                          size: 24,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -530,7 +779,7 @@ class _PhotoDetailPageState extends State<_PhotoDetailPage>
               ),
             ),
           ),
-          Container(width: 1, height: 44, color: const Color(0xFFE2E8F0)),
+          Container(width: 1, height: 44, color: AppColors.divider),
           Expanded(
             child: Material(
               color: Colors.transparent,
@@ -541,10 +790,21 @@ class _PhotoDetailPageState extends State<_PhotoDetailPage>
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   child: Column(
                     children: [
-                      Icon(
-                        p.isFavorited ? Icons.star_rounded : Icons.star_outline_rounded,
-                        color: p.isFavorited ? AppColors.champagneGold : AppColors.textSecondary,
-                        size: 26,
+                      TweenAnimationBuilder<double>(
+                        duration: const Duration(milliseconds: 90),
+                        curve: Curves.easeOutBack,
+                        tween: Tween<double>(
+                          begin: 1,
+                          end: p.isFavorited ? 1.14 : 1.0,
+                        ),
+                        builder: (context, scale, child) {
+                          return Transform.scale(scale: scale, child: child);
+                        },
+                        child: Icon(
+                          p.isFavorited ? Icons.star_rounded : Icons.star_outline_rounded,
+                          color: p.isFavorited ? AppColors.champagneGold : AppColors.textSecondary,
+                          size: 26,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -565,7 +825,7 @@ class _PhotoDetailPageState extends State<_PhotoDetailPage>
               ),
             ),
           ),
-          Container(width: 1, height: 44, color: const Color(0xFFE2E8F0)),
+          Container(width: 1, height: 44, color: AppColors.divider),
           Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
@@ -647,16 +907,24 @@ class _PhotoDetailPageState extends State<_PhotoDetailPage>
                             children: [
                               IconButton(
                                 style: IconButton.styleFrom(
-                                  backgroundColor: const Color(0x66000000),
+                                  backgroundColor: AppColors.overlayDark,
                                 ),
                                 icon: const Icon(Icons.arrow_back, color: Colors.white),
                                 onPressed: () => context.pop(),
                               ),
                               const Spacer(),
+                              // 分享按钮
+                              IconButton(
+                                style: IconButton.styleFrom(
+                                  backgroundColor: AppColors.overlayDark,
+                                ),
+                                icon: const Icon(Icons.share, color: Colors.white),
+                                onPressed: () => _sharePhoto(),
+                              ),
                               if (meId != null && meId == _photo!.userId)
                                 IconButton(
                                   style: IconButton.styleFrom(
-                                    backgroundColor: const Color(0x66000000),
+                                    backgroundColor: AppColors.overlayDark,
                                   ),
                                   icon: const Icon(Icons.delete_outline, color: Colors.white),
                                   onPressed: _delete,
@@ -692,7 +960,7 @@ class _PhotoDetailPageState extends State<_PhotoDetailPage>
                                       width: 36,
                                       height: 3,
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFFC9CED6),
+                                        color: AppColors.divider,
                                         borderRadius: BorderRadius.circular(99),
                                       ),
                                     ),
@@ -729,9 +997,9 @@ class _PhotoDetailPageState extends State<_PhotoDetailPage>
                                   Container(
                                     padding: const EdgeInsets.all(14),
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFFF8FAFC),
+                                      color: AppColors.background,
                                       borderRadius: BorderRadius.circular(14),
-                                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                                      border: Border.all(color: AppColors.divider),
                                     ),
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -750,20 +1018,51 @@ class _PhotoDetailPageState extends State<_PhotoDetailPage>
                                           ],
                                         ),
                                         const SizedBox(height: 10),
-                                        Text(
-                                          '${_photo!.cameraBrand ?? ''} ${_photo!.cameraModel ?? ''}'.trim(),
-                                          style: const TextStyle(fontSize: 14),
+                                        _buildRecipeParamRow(
+                                          '光圈',
+                                          photoApertureRecorded(_photo!.aperture),
                                         ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          '${_photo!.focalLength ?? '-'}  |  f/${_photo!.aperture ?? '-'}  |  ${_photo!.shutterSpeed ?? '-'}  |  ISO ${_photo!.iso ?? '-'}',
-                                          style: const TextStyle(
-                                            fontSize: 13,
-                                            color: AppColors.textSecondary,
+                                        _buildRecipeParamRow(
+                                          '快门',
+                                          photoParamRecorded(_photo!.shutterSpeed),
+                                        ),
+                                        _buildRecipeParamRow(
+                                          'ISO',
+                                          photoIsoRecorded(_photo!.iso),
+                                        ),
+                                        _buildRecipeParamRow(
+                                          '机身/品牌',
+                                          photoParamRecorded(
+                                            [
+                                              _photo!.cameraBrand?.trim(),
+                                              _photo!.cameraModel?.trim(),
+                                            ]
+                                                .whereType<String>()
+                                                .where((e) => e.isNotEmpty)
+                                                .join(' '),
                                           ),
                                         ),
-                                        if (_photo!.locationName != null &&
-                                            _photo!.locationName!.isNotEmpty) ...[
+                                        _buildRecipeParamRow(
+                                          '镜头',
+                                          photoParamRecorded(_photo!.lensModel),
+                                        ),
+                                        _buildRecipeParamRow(
+                                          '焦段',
+                                          photoParamRecorded(_photo!.focalLength),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          '若上传时未带出 EXIF 或接口未返回镜头型号，此处可能为「未记录」，与发布页一致。',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            height: 1.35,
+                                            color: AppColors.textMuted.withValues(alpha: 0.95),
+                                          ),
+                                        ),
+                                        if ((_photo!.locationName != null &&
+                                                _photo!.locationName!.trim().isNotEmpty) ||
+                                            (_photo!.latitude != null &&
+                                                _photo!.longitude != null)) ...[
                                           const SizedBox(height: 12),
                                           const Divider(height: 1),
                                           const SizedBox(height: 10),
@@ -782,7 +1081,10 @@ class _PhotoDetailPageState extends State<_PhotoDetailPage>
                                                   const SizedBox(width: 8),
                                                   Expanded(
                                                     child: Text(
-                                                      _photo!.locationName!,
+                                                      _photo!.locationName != null &&
+                                                              _photo!.locationName!.trim().isNotEmpty
+                                                          ? _photo!.locationName!.trim()
+                                                          : '在地图上查看坐标点',
                                                       style: const TextStyle(
                                                         color: AppColors.kleinBlue,
                                                         fontWeight: FontWeight.w600,
@@ -810,7 +1112,7 @@ class _PhotoDetailPageState extends State<_PhotoDetailPage>
                                       width: double.infinity,
                                       padding: const EdgeInsets.all(14),
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFFEEF2FF),
+                                        color: AppColors.infoLight,
                                         borderRadius: BorderRadius.circular(14),
                                         border: Border.all(
                                           color: AppColors.kleinBlue.withValues(alpha: 0.2),

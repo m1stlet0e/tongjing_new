@@ -5,14 +5,18 @@
 //
 // 说明：该文件已补充中文注释，便于后续维护与交接。
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:tongjing/providers/auth_provider.dart';
+import 'package:tongjing/services/analytics_service.dart';
 import 'package:tongjing/services/api_service.dart';
 import 'package:tongjing/services/publish_draft_store.dart';
 import 'package:tongjing/theme/app_colors.dart';
+import 'package:tongjing/utils/photo_recipe_display.dart';
 
 /// `PublishScreen`：页面组件，负责构建界面布局并响应用户操作。
 ///
@@ -45,16 +49,72 @@ class _PublishScreenState extends State<PublishScreen> {
   bool _busy = false;
   _Step _step = _Step.select;
   bool _hasLocalDraft = false;
+  String? _draftSavedAtLabel;
+  String? _lastUploadError;
+  Timer? _autoSaveDebounce;
 
   @override
   void initState() {
     super.initState();
+    _title.addListener(_onDraftFieldChanged);
+    _caption.addListener(_onDraftFieldChanged);
+    _tips.addListener(_onDraftFieldChanged);
+    _location.addListener(_onDraftFieldChanged);
+    _lat.addListener(_onDraftFieldChanged);
+    _lng.addListener(_onDraftFieldChanged);
+    _tagsInput.addListener(_onDraftFieldChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _refreshDraftFlag());
   }
 
   Future<void> _refreshDraftFlag() async {
-    final has = await _draftStore.hasDraft();
-    if (mounted) setState(() => _hasLocalDraft = has);
+    final draft = await _draftStore.load();
+    if (!mounted) return;
+    final url = draft?['image_url']?.toString() ?? '';
+    final rawSavedAt = draft?['saved_at']?.toString();
+    String? savedLabel;
+    if (rawSavedAt != null && rawSavedAt.isNotEmpty) {
+      final dt = DateTime.tryParse(rawSavedAt)?.toLocal();
+      if (dt != null) {
+        savedLabel =
+            '${dt.year.toString().padLeft(4, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} '
+            '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+      }
+    }
+    setState(() {
+      _hasLocalDraft = url.isNotEmpty;
+      _draftSavedAtLabel = savedLabel;
+    });
+  }
+
+  void _onDraftFieldChanged() {
+    _scheduleAutoSave();
+  }
+
+  void _scheduleAutoSave() {
+    if (_step != _Step.edit || _uploadData == null) return;
+    _autoSaveDebounce?.cancel();
+    _autoSaveDebounce = Timer(const Duration(milliseconds: 900), () {
+      _saveDraftSilently();
+    });
+  }
+
+  Future<void> _saveDraftSilently() async {
+    if (!mounted || _uploadData == null) return;
+    final url = _uploadData!['url']?.toString();
+    if (url == null || url.isEmpty) return;
+    await _draftStore.save(
+      imageUrl: url,
+      exifData: _exifMap(),
+      title: _title.text,
+      caption: _caption.text,
+      tips: _tips.text,
+      location: _location.text,
+      lat: _lat.text,
+      lng: _lng.text,
+      tagType: _tagType,
+      tags: _selectedTags.map((e) => Map<String, String>.from(e)).toList(),
+    );
+    await _refreshDraftFlag();
   }
 
   @override
@@ -62,6 +122,14 @@ class _PublishScreenState extends State<PublishScreen> {
   ///
   /// 方法：`dispose`。
   void dispose() {
+    _autoSaveDebounce?.cancel();
+    _title.removeListener(_onDraftFieldChanged);
+    _caption.removeListener(_onDraftFieldChanged);
+    _tips.removeListener(_onDraftFieldChanged);
+    _location.removeListener(_onDraftFieldChanged);
+    _lat.removeListener(_onDraftFieldChanged);
+    _lng.removeListener(_onDraftFieldChanged);
+    _tagsInput.removeListener(_onDraftFieldChanged);
     _title.dispose();
     _caption.dispose();
     _tips.dispose();
@@ -94,10 +162,11 @@ class _PublishScreenState extends State<PublishScreen> {
     final p = ImagePicker();
     final x = await p.pickImage(source: src, imageQuality: 90);
     if (x == null) return;
-    setState(() {
-      _imagePath = x.path;
-      _step = _Step.select;
-    });
+      setState(() {
+        _imagePath = x.path;
+        _step = _Step.select;
+        _lastUploadError = null;
+      });
   }
 
   Future<void> _upload() async {
@@ -125,17 +194,25 @@ class _PublishScreenState extends State<PublishScreen> {
         _lat.text = lat == null ? '' : '$lat';
         _lng.text = lng == null ? '' : '$lng';
         _step = _Step.edit;
+        _lastUploadError = null;
       });
+      await _saveDraftSilently();
     } on ApiException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
       }
-      setState(() => _step = _Step.select);
+      setState(() {
+        _step = _Step.select;
+        _lastUploadError = e.message;
+      });
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
       }
-      setState(() => _step = _Step.select);
+      setState(() {
+        _step = _Step.select;
+        _lastUploadError = '$e';
+      });
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -166,6 +243,7 @@ class _PublishScreenState extends State<PublishScreen> {
     }
     _tagsInput.clear();
     setState(() {});
+    _scheduleAutoSave();
   }
 
   Future<({String copy, List<Map<String, String>> tags})> _requestAiAssist() async {
@@ -191,6 +269,7 @@ class _PublishScreenState extends State<PublishScreen> {
         _selectedTags.add({'name': name, 'type': tag['type'] ?? 'scene'});
       }
       if (mounted) setState(() {});
+      _scheduleAutoSave();
     } on ApiException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
@@ -207,6 +286,7 @@ class _PublishScreenState extends State<PublishScreen> {
         }
         _aiCopyHint = 'AI 文案已生成，可继续手动修改';
       });
+      _scheduleAutoSave();
     } on ApiException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
@@ -227,7 +307,7 @@ class _PublishScreenState extends State<PublishScreen> {
     setState(() => _busy = true);
     try {
       final ex = _exifMap();
-      await auth.api.photoPublish(
+      final newId = await auth.api.photoPublish(
         imageUrl: url,
         title: title,
         description: _caption.text.trim().isEmpty ? null : _caption.text.trim(),
@@ -252,11 +332,16 @@ class _PublishScreenState extends State<PublishScreen> {
         tags: _selectedTags,
       );
       await _draftStore.clear();
+      await AnalyticsService.instance.track(
+        name: 'publish_success',
+        userId: auth.user?.id,
+        properties: <String, dynamic>{'photo_id': newId},
+      );
       if (!mounted) return;
-      setState(() {
-        _hasLocalDraft = false;
-        _step = _Step.success;
-      });
+      await auth.refreshProfile();
+      if (!mounted) return;
+      _reset();
+      context.push('/photo/$newId');
     } on ApiException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -278,6 +363,7 @@ class _PublishScreenState extends State<PublishScreen> {
   ///
   /// 方法：`_reset`。
   void _reset() {
+    _autoSaveDebounce?.cancel();
     setState(() {
       _imagePath = null;
       _uploadData = null;
@@ -290,6 +376,7 @@ class _PublishScreenState extends State<PublishScreen> {
       _tagsInput.clear();
       _selectedTags.clear();
       _step = _Step.select;
+      _lastUploadError = null;
     });
   }
 
@@ -326,6 +413,7 @@ class _PublishScreenState extends State<PublishScreen> {
       }
       _imagePath = null;
       _step = _Step.edit;
+      _lastUploadError = null;
     });
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已恢复草稿')));
@@ -335,7 +423,10 @@ class _PublishScreenState extends State<PublishScreen> {
   Future<void> _discardDraft() async {
     await _draftStore.clear();
     if (mounted) {
-      setState(() => _hasLocalDraft = false);
+      setState(() {
+        _hasLocalDraft = false;
+        _draftSavedAtLabel = null;
+      });
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已丢弃草稿')));
     }
   }
@@ -360,21 +451,29 @@ class _PublishScreenState extends State<PublishScreen> {
       tags: _selectedTags.map((e) => Map<String, String>.from(e)).toList(),
     );
     if (mounted) {
-      setState(() => _hasLocalDraft = true);
+      await _refreshDraftFlag();
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('草稿已保存')));
     }
   }
 
   Widget _buildExifCard() {
     final ex = _exifMap() ?? <String, dynamic>{};
-    final rows = <(String, String?)>[
-      ('设备', ex['camera_model']?.toString()),
-      ('镜头', ex['lens_model']?.toString()),
-      ('焦段', ex['focal_length']?.toString()),
-      ('光圈', ex['aperture']?.toString()),
-      ('快门', ex['shutter_speed']?.toString()),
-      ('ISO', ex['iso']?.toString()),
-      ('白平衡', ex['white_balance']?.toString()),
+    int? isoVal;
+    final isoRaw = ex['iso'];
+    if (isoRaw is num) {
+      isoVal = isoRaw.toInt();
+    } else if (isoRaw != null) {
+      isoVal = int.tryParse(isoRaw.toString());
+    }
+    final rows = <(String, String)>[
+      ('设备', photoParamRecorded(ex['camera_model']?.toString())),
+      ('镜头', photoParamRecorded(ex['lens_model']?.toString())),
+      ('焦段', photoParamRecorded(ex['focal_length']?.toString())),
+      ('光圈', photoApertureRecorded(ex['aperture']?.toString())),
+      ('快门', photoParamRecorded(ex['shutter_speed']?.toString())),
+      ('ISO', photoIsoRecorded(isoVal)),
+      ('白平衡', photoParamRecorded(ex['white_balance']?.toString())),
     ];
     return Container(
       padding: const EdgeInsets.all(12),
@@ -408,12 +507,21 @@ class _PublishScreenState extends State<PublishScreen> {
                   ),
                   Expanded(
                     child: Text(
-                      (r.$2 == null || r.$2!.isEmpty) ? '未识别' : r.$2!,
+                      r.$2,
                       style: const TextStyle(fontSize: 13),
                     ),
                   ),
                 ],
               ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            '部分机型或未开启相册/相机权限时，EXIF 可能不完整，与详情页展示一致；属正常现象。',
+            style: TextStyle(
+              fontSize: 11,
+              height: 1.35,
+              color: AppColors.textMuted.withValues(alpha: 0.95),
             ),
           ),
         ],
@@ -445,29 +553,16 @@ class _PublishScreenState extends State<PublishScreen> {
         foregroundColor: AppColors.textPrimary,
       ),
       body: switch (_step) {
-        _Step.success => Center(
-            child: Padding(
-              padding: const EdgeInsets.all(32),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.check_circle, color: Colors.green, size: 72),
-                  const SizedBox(height: 16),
-                  const Text('发布成功', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 24),
-                  FilledButton(
-                    onPressed: () {
-                      _reset();
-                      context.go('/home');
-                    },
-                    style: FilledButton.styleFrom(backgroundColor: AppColors.kleinBlue),
-                    child: const Text('返回首页'),
-                  ),
-                ],
-              ),
+        _Step.uploading => const Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 12),
+                Text('正在上传图片并提取 EXIF，请稍候...'),
+              ],
             ),
           ),
-        _Step.uploading => const Center(child: CircularProgressIndicator()),
         _Step.edit => SingleChildScrollView(
             padding: const EdgeInsets.all(20),
             child: Column(
@@ -581,6 +676,7 @@ class _PublishScreenState extends State<PublishScreen> {
                         selected: {_tagType},
                         onSelectionChanged: (v) {
                           setState(() => _tagType = v.first);
+                          _scheduleAutoSave();
                         },
                       ),
                     ),
@@ -616,6 +712,7 @@ class _PublishScreenState extends State<PublishScreen> {
                             ),
                             onDeleted: () {
                               setState(() => _selectedTags.remove(e));
+                              _scheduleAutoSave();
                             },
                           ),
                         )
@@ -660,6 +757,16 @@ class _PublishScreenState extends State<PublishScreen> {
                           '检测到未发布的草稿（含已上传图片，可继续编辑）',
                           style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
                         ),
+                        if (_draftSavedAtLabel != null) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            '最近保存：$_draftSavedAtLabel',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textMuted,
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 10),
                         Row(
                           children: [
@@ -688,6 +795,13 @@ class _PublishScreenState extends State<PublishScreen> {
                 ],
                 if (_imagePath != null)
                   Text('已选择图片，点击下方上传', style: TextStyle(color: AppColors.textSecondary)),
+                if (_lastUploadError != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    '上次上传失败：$_lastUploadError',
+                    style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 OutlinedButton.icon(
                   onPressed: _busy ? null : () => _pick(ImageSource.gallery),
@@ -720,4 +834,4 @@ class _PublishScreenState extends State<PublishScreen> {
 /// `_Step`：核心类型定义，承载该模块的主要职责。
 ///
 /// 主要用于统一该模块的核心能力与数据结构边界。
-enum _Step { select, uploading, edit, success }
+enum _Step { select, uploading, edit }

@@ -20,6 +20,25 @@ Flutter 摄影社区客户端。推荐通过**腾讯云 CloudBase** 云函数 `t
 
 详见：`lib/services/cloudbase_gate.dart`、`lib/services/cloudbase_api_proxy.dart`。
 
+### 微信登录接入（Flutter 原生方案，已接入）
+
+项目已使用 `fluwx` + 后端 `POST /api/v1/auth/login/oauth`（provider=`wechat`）实现微信登录。
+
+1. `dart_defines.json` 配置：
+   - `ENABLE_WECHAT_LOGIN=true`
+   - `WECHAT_MOCK_LOGIN=true`（开发联调建议开启）
+   - `WECHAT_OPEN_APP_ID=wx...`
+   - `WECHAT_UNIVERSAL_LINK=https://你的域名/微信/`（iOS 必填）
+2. 原生占位值必须替换为真实 AppID：
+   - Android: `android/app/src/main/AndroidManifest.xml` 中 `wx_your_app_id`
+   - iOS: `ios/Runner/Info.plist` 中 `wx_your_app_id`
+3. 运行：
+   - `flutter run --dart-define-from-file=dart_defines.json`
+
+说明：
+- `WECHAT_MOCK_LOGIN=true` 且未配置 `WECHAT_OPEN_APP_ID` 时，客户端仍会展示微信登录按钮并走 Mock 登录，便于先完成前端联调。
+- 发布前请将 `WECHAT_MOCK_LOGIN=false`，并配置真实 `WECHAT_OPEN_APP_ID` 与平台签名/Universal Link。
+
 ## 临时官网落地页（微信开放平台可用）
 
 - 模板目录：`server-cloudbase/landing/`
@@ -35,3 +54,9 @@ This project is a starting point for a Flutter application.
 - [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
 - [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
 - [online documentation](https://docs.flutter.dev/)
+
+## Delivery Docs
+
+- 研发交付清单：`docs/plans/metrics-and-release-checklist.md`
+- A/B 与灰度规范：`docs/plans/ab-test-and-feature-flag-rules.md`
+- 当前阶段主计划：`docs/plans/2026-04-01-growth-stability-monetization-content-plan.md`

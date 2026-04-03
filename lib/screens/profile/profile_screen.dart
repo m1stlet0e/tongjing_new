@@ -13,8 +13,12 @@ import 'package:tongjing/models/photo_models.dart';
 import 'package:tongjing/models/user_model.dart';
 import 'package:tongjing/providers/auth_provider.dart';
 import 'package:tongjing/services/api_service.dart';
+import 'package:tongjing/services/photo_state_sync_bus.dart';
 import 'package:tongjing/router/photo_gallery_extra.dart';
 import 'package:tongjing/theme/app_colors.dart';
+import 'package:tongjing/theme/app_spacing.dart';
+import 'package:tongjing/theme/app_typography.dart';
+import 'package:tongjing/theme/app_shapes.dart';
 import 'package:tongjing/utils/remote_image.dart';
 import 'package:tongjing/widgets/gear_card.dart';
 
@@ -32,12 +36,15 @@ class ProfileScreen extends StatefulWidget {
 ///
 /// 主要用于统一该模块的核心能力与数据结构边界。
 class _ProfileScreenState extends State<ProfileScreen> {
+  final _syncBus = PhotoStateSyncBus.instance;
   UserModel? _profile;
   List<PhotoListItem> _photos = [];
   List<Map<String, dynamic>> _gear = [];
   List<Map<String, dynamic>> _footprintRows = [];
   List<PhotoListItem> _favoritePhotos = [];
   bool _loading = true;
+  bool _loadingGear = true;
+  bool _loadingContent = true;
   int _contentTab = 0;
 
   @override
@@ -46,13 +53,57 @@ class _ProfileScreenState extends State<ProfileScreen> {
   /// 方法：`initState`。
   void initState() {
     super.initState();
+    _syncBus.addListener(_onPhotoStateSync);
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  @override
+  void dispose() {
+    _syncBus.removeListener(_onPhotoStateSync);
+    super.dispose();
+  }
+
+  void _onPhotoStateSync() {
+    final e = _syncBus.lastEvent;
+    if (!mounted || e == null) return;
+    setState(() {
+      final i1 = _photos.indexWhere((x) => x.id == e.photoId);
+      if (i1 >= 0) {
+        final b = _photos[i1];
+        _photos[i1] = b.copyWith(
+          isLiked: e.isLiked ?? b.isLiked,
+          likesCount: e.likesCount ?? b.likesCount,
+          isFavorited: e.isFavorited ?? b.isFavorited,
+          favoritesCount: e.favoritesCount ?? b.favoritesCount,
+        );
+      }
+      final i2 = _favoritePhotos.indexWhere((x) => x.id == e.photoId);
+      if (i2 >= 0) {
+        if (e.isFavorited == false) {
+          _favoritePhotos.removeAt(i2);
+        } else {
+          final b = _favoritePhotos[i2];
+          _favoritePhotos[i2] = b.copyWith(
+            isLiked: e.isLiked ?? b.isLiked,
+            likesCount: e.likesCount ?? b.likesCount,
+            isFavorited: e.isFavorited ?? b.isFavorited,
+            favoritesCount: e.favoritesCount ?? b.favoritesCount,
+          );
+        }
+      } else if (e.isFavorited == true && e.photo != null) {
+        _favoritePhotos.insert(0, e.photo!);
+      }
+    });
   }
 
   Future<void> _load() async {
     final auth = context.read<AuthNotifier>();
     if (!auth.isAuthenticated) return;
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _loadingGear = true;
+      _loadingContent = true;
+    });
     UserModel? me;
     try {
       me = await auth.api.usersMe();
@@ -62,29 +113,61 @@ class _ProfileScreenState extends State<ProfileScreen> {
       me = auth.user;
     }
     if (me == null) {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _loadingGear = false;
+          _loadingContent = false;
+        });
+      }
       return;
     }
+    final meId = me.id;
 
-    List<PhotoListItem> photos = [];
-    List<Map<String, dynamic>> gear = [];
-    List<Map<String, dynamic>> fp = [];
-    List<PhotoListItem> favs = [];
-    try {
-      final my = await auth.api.photosMy(limit: 60);
-      photos = my.photos;
-    } catch (_) {}
+    Future<List<PhotoListItem>> loadMyPhotos() async {
+      try {
+        final my = await auth.api.photosMy(limit: 60);
+        return my.photos;
+      } catch (_) {
+        return <PhotoListItem>[];
+      }
+    }
 
-    try {
-      gear = await auth.api.equipmentForUser(me.id);
-    } catch (_) {}
-    try {
-      fp = await auth.api.usersFootprint(me.id);
-    } catch (_) {}
-    try {
-      final fr = await auth.api.photosFavorites(limit: 60);
-      favs = fr.photos;
-    } catch (_) {}
+    Future<List<Map<String, dynamic>>> loadGear() async {
+      try {
+        return await auth.api.equipmentForUser(meId);
+      } catch (_) {
+        return <Map<String, dynamic>>[];
+      }
+    }
+
+    Future<List<Map<String, dynamic>>> loadFootprints() async {
+      try {
+        return await auth.api.usersFootprint(meId);
+      } catch (_) {
+        return <Map<String, dynamic>>[];
+      }
+    }
+
+    Future<List<PhotoListItem>> loadFavorites() async {
+      try {
+        final fr = await auth.api.photosFavorites(limit: 60);
+        return fr.photos;
+      } catch (_) {
+        return <PhotoListItem>[];
+      }
+    }
+
+    final results = await Future.wait<Object>([
+      loadMyPhotos(),
+      loadGear(),
+      loadFootprints(),
+      loadFavorites(),
+    ]);
+    final photos = results[0] as List<PhotoListItem>;
+    final gear = results[1] as List<Map<String, dynamic>>;
+    final fp = results[2] as List<Map<String, dynamic>>;
+    final favs = results[3] as List<PhotoListItem>;
 
     if (!mounted) return;
     setState(() {
@@ -94,6 +177,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _footprintRows = fp;
       _favoritePhotos = favs;
       _loading = false;
+      _loadingGear = false;
+      _loadingContent = false;
     });
   }
 
@@ -111,23 +196,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           )
         : await router.push('/photo/${p.id}');
     if (!context.mounted) return;
-    if (r == true) await _load();
-  }
-
-  Future<void> _logout() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('退出登录'),
-        content: const Text('确定退出当前账号？'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('取消')),
-          TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('确定')),
-        ],
-      ),
-    );
-    if (ok == true && mounted) {
-      await context.read<AuthNotifier>().logout();
+    if (r == true) {
+      await _load();
     }
   }
 
@@ -196,14 +266,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     children: [
                       Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.fromLTRB(14, 12, 14, 16),
+                        padding: const EdgeInsets.fromLTRB(
+                          AppSpacing.lg,
+                          AppSpacing.lg,
+                          AppSpacing.lg,
+                          AppSpacing.lg,
+                        ),
                         decoration: BoxDecoration(
                           gradient: const LinearGradient(
-                            colors: [Color(0xFF0E2A7B), AppColors.kleinBlue],
+                            colors: [AppColors.profileHeaderStart, AppColors.kleinBlue],
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                           ),
-                          borderRadius: BorderRadius.circular(16),
+                          borderRadius: AppShapes.radiusXxlAll,
                         ),
                         child: Column(
                           children: [
@@ -217,29 +292,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   ),
                                 ),
                                 const Spacer(),
-                                IconButton(
-                                  onPressed: _logout,
-                                  icon: const Icon(
-                                    Icons.logout,
-                                    color: Colors.white,
-                                  ),
-                                ),
                               ],
                             ),
                             _ProfileAvatar(user: u),
-                            const SizedBox(height: 12),
+                            AppSpacing.verticalMd,
                             Text(
                               u.username,
-                              style: const TextStyle(
-                                fontSize: 20,
+                              style: AppTypography.pageTitleSmall.copyWith(
                                 color: Colors.white,
-                                fontWeight: FontWeight.bold,
                               ),
                             ),
-                            const SizedBox(height: 4),
+                            AppSpacing.verticalXs,
                             Text(
                               u.bio ?? '还没有个人简介',
-                              style: const TextStyle(color: Color(0xFFDDE3F6)),
+                              style: AppTypography.secondary.copyWith(
+                                color: AppColors.infoLight,
+                              ),
                             ),
                             const SizedBox(height: 16),
                             Wrap(
@@ -288,6 +356,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
                         ),
                       ),
+                      if (_loadingGear)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 8),
+                          child: LinearProgressIndicator(minHeight: 2),
+                        ),
                       const SizedBox(height: 10),
                       SizedBox(
                         height: 96,
@@ -324,6 +397,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           TextButton(onPressed: () => context.push('/my-works'), child: const Text('查看更多')),
                         ],
                       ),
+                      if (_loadingContent)
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: 8),
+                          child: LinearProgressIndicator(minHeight: 2),
+                        ),
                       Row(
                         children: [
                           Expanded(child: _contentChip('作品', 0)),
@@ -346,12 +424,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 )
               else
                 SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
                   sliver: SliverGrid(
                     gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 3,
-                      mainAxisSpacing: 6,
-                      crossAxisSpacing: 6,
+                      mainAxisSpacing: AppSpacing.xxs,
+                      crossAxisSpacing: AppSpacing.xxs,
                       childAspectRatio: 1,
                     ),
                     delegate: SliverChildBuilderDelegate(
@@ -361,7 +439,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         return GestureDetector(
                           onTap: () => _openPhotoInGallery(_photos, p),
                           child: ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
+                            borderRadius: AppShapes.radiusXsAll,
                             child: CachedNetworkImage(
                               imageUrl: p.imageUrl,
                               fit: BoxFit.cover,
@@ -391,14 +469,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     bool tappable = false,
     VoidCallback? onTap,
   }) {
-    final valueStyle = TextStyle(
-      fontSize: 18,
-      fontWeight: FontWeight.w600,
+    final valueStyle = AppTypography.statNumber.copyWith(
       color: light ? Colors.white : AppColors.textPrimary,
     );
-    final labelStyle = TextStyle(
-      fontSize: 11,
-      color: light ? const Color(0xFFDDE3F6) : AppColors.textMuted,
+    final labelStyle = AppTypography.statLabel.copyWith(
+      color: light ? AppColors.infoLight : AppColors.textMuted,
     );
     final col = Column(
       mainAxisSize: MainAxisSize.min,
@@ -435,7 +510,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: AppShapes.radiusSmAll,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
           child: col,
@@ -454,7 +529,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: AppShapes.radiusXlAll,
                 border: Border.all(color: AppColors.borderLight),
               ),
               child: Column(
@@ -585,7 +660,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: AppShapes.radiusXlAll,
                 border: Border.all(color: AppColors.borderLight),
               ),
               child: Column(
@@ -610,22 +685,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return [
       SliverPadding(
         padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-        sliver: SliverToBoxAdapter(
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: () => context.push('/favorites'),
-              child: const Text('收藏夹'),
-            ),
-          ),
-        ),
-      ),
-      SliverPadding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
         sliver: SliverGrid(
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 3,
-            mainAxisSpacing: 6,
+            mainAxisSpacing: AppSpacing.xxs,
             crossAxisSpacing: 6,
             childAspectRatio: 1,
           ),
@@ -728,4 +791,3 @@ class _ProfileAvatar extends StatelessWidget {
     );
   }
 }
-

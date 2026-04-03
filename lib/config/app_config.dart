@@ -64,17 +64,25 @@ class AppConfig {
     defaultValue: true,
   );
 
-  /// 是否启用微信登录（需微信开放平台移动应用审核通过并配置 AppID）。
-  /// 默认关闭；临上架时加 `--dart-define=ENABLE_WECHAT_LOGIN=true` 再打开。
-  static const bool enableWechatLogin = bool.fromEnvironment(
+  /// 是否启用微信登录入口（可配合 [wechatMockLogin] 在未申请 AppID 时先联调 UI/流程）。
+  static const bool _enableWechatLoginFlag = bool.fromEnvironment(
     'ENABLE_WECHAT_LOGIN',
-    defaultValue: false,
+    defaultValue: true,
   );
 
   /// 微信开放平台 AppID（用于原生微信授权登录）。
   static const String wechatOpenAppId = String.fromEnvironment(
     'WECHAT_OPEN_APP_ID',
     defaultValue: '',
+  );
+
+  static bool get enableWechatLogin => _enableWechatLoginFlag;
+
+  /// 开发阶段微信 Mock 登录。
+  /// 为 true 且未配置 AppID 时，将走本地模拟授权码与模拟用户登录。
+  static const bool wechatMockLogin = bool.fromEnvironment(
+    'WECHAT_MOCK_LOGIN',
+    defaultValue: true,
   );
 
   /// iOS Universal Link（微信开放平台配置项，示例：https://app.example.com/link/）。

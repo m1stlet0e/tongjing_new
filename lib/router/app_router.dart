@@ -15,6 +15,7 @@ import 'package:tongjing/screens/edit_profile/edit_profile_screen.dart';
 import 'package:tongjing/screens/favorites/favorites_screen.dart';
 import 'package:tongjing/screens/home/home_screen.dart';
 import 'package:tongjing/screens/login/login_screen.dart';
+import 'package:tongjing/screens/map/location_photos_screen.dart';
 import 'package:tongjing/screens/map/map_screen.dart' show MapOpenArgs, MapScreen;
 import 'package:tongjing/screens/my_equipment/my_equipment_screen.dart';
 import 'package:tongjing/screens/my_plans/my_plans_screen.dart';
@@ -28,6 +29,10 @@ import 'package:tongjing/screens/profile/my_interaction_lists_screen.dart';
 import 'package:tongjing/screens/profile/profile_screen.dart';
 import 'package:tongjing/screens/publish/publish_screen.dart';
 import 'package:tongjing/screens/settings/settings_screen.dart';
+import 'package:tongjing/screens/settings/notifications_settings_screen.dart';
+import 'package:tongjing/screens/settings/app_preferences_screen.dart';
+import 'package:tongjing/screens/settings/device_sessions_screen.dart';
+import 'package:tongjing/screens/settings/login_history_screen.dart';
 import 'package:tongjing/screens/shell/main_shell.dart';
 import 'package:tongjing/screens/static/about_screen.dart';
 import 'package:tongjing/screens/static/account_security_screen.dart';
@@ -36,15 +41,28 @@ import 'package:tongjing/screens/static/terms_screen.dart';
 
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
-/// 全屏栈路由：无过渡动画，减少「点了要等一下才翻页」的体感延迟。
-CustomTransitionPage<void> _instantPage(GoRouterState state, Widget child) {
+/// 带过渡动画的页面：淡入 + 轻微上滑
+CustomTransitionPage<void> _fadeSlidePage(GoRouterState state, Widget child) {
   return CustomTransitionPage<void>(
     key: state.pageKey,
     child: child,
-    transitionDuration: Duration.zero,
-    reverseTransitionDuration: Duration.zero,
-    transitionsBuilder:
-        (context, animation, secondaryAnimation, child) => child,
+    transitionDuration: const Duration(milliseconds: 250),
+    reverseTransitionDuration: const Duration(milliseconds: 200),
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      return FadeTransition(
+        opacity: animation,
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 0.05),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+          )),
+          child: child,
+        ),
+      );
+    },
   );
 }
 
@@ -110,7 +128,7 @@ GoRouter createAppRouter(AuthNotifier auth) {
         path: '/login',
         parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (context, state) =>
-            _instantPage(state, const LoginScreen()),
+            _fadeSlidePage(state, const LoginScreen()),
       ),
       GoRoute(
         path: '/photo/:id',
@@ -131,7 +149,7 @@ GoRouter createAppRouter(AuthNotifier auth) {
               }
             }
           }
-          return _instantPage(
+          return _fadeSlidePage(
             state,
             PhotoDetailScreen(
               photoId: id,
@@ -142,120 +160,158 @@ GoRouter createAppRouter(AuthNotifier auth) {
         },
       ),
       GoRoute(
+        path: '/map/location-photos',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) {
+          final ex = state.extra;
+          final args = ex is MapLocationPhotosArgs
+              ? ex
+              : const MapLocationPhotosArgs(locationName: '该地点作品', photos: []);
+          return _fadeSlidePage(
+            state,
+            MapLocationPhotosScreen(args: args),
+          );
+        },
+      ),
+      GoRoute(
         path: '/user/:id',
         parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (context, state) {
           final id = int.tryParse(state.pathParameters['id'] ?? '') ?? 0;
-          return _instantPage(state, AuthorProfileScreen(userId: id));
+          return _fadeSlidePage(state, AuthorProfileScreen(userId: id));
         },
       ),
       GoRoute(
         path: '/settings',
         parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (context, state) =>
-            _instantPage(state, const SettingsScreen()),
+            _fadeSlidePage(state, const SettingsScreen()),
       ),
       GoRoute(
         path: '/edit-profile',
         parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (context, state) =>
-            _instantPage(state, const EditProfileScreen()),
+            _fadeSlidePage(state, const EditProfileScreen()),
       ),
       GoRoute(
         path: '/my-equipment',
         parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (context, state) =>
-            _instantPage(state, const MyEquipmentScreen()),
+            _fadeSlidePage(state, const MyEquipmentScreen()),
       ),
       GoRoute(
         path: '/privacy',
         parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (context, state) =>
-            _instantPage(state, const PrivacyScreen()),
+            _fadeSlidePage(state, const PrivacyScreen()),
       ),
       GoRoute(
         path: '/terms',
         parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (context, state) =>
-            _instantPage(state, const TermsScreen()),
+            _fadeSlidePage(state, const TermsScreen()),
       ),
       GoRoute(
         path: '/account-security',
         parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (context, state) =>
-            _instantPage(state, const AccountSecurityScreen()),
+            _fadeSlidePage(state, const AccountSecurityScreen()),
       ),
       GoRoute(
         path: '/about',
         parentNavigatorKey: rootNavigatorKey,
-        pageBuilder: (context, state) => _instantPage(state, const AboutScreen()),
+        pageBuilder: (context, state) => _fadeSlidePage(state, const AboutScreen()),
+      ),
+      GoRoute(
+        path: '/settings/notifications',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) =>
+            _fadeSlidePage(state, const NotificationsSettingsScreen()),
+      ),
+      GoRoute(
+        path: '/settings/preferences',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) =>
+            _fadeSlidePage(state, const AppPreferencesScreen()),
+      ),
+      GoRoute(
+        path: '/settings/device-sessions',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) =>
+            _fadeSlidePage(state, const DeviceSessionsScreen()),
+      ),
+      GoRoute(
+        path: '/settings/login-history',
+        parentNavigatorKey: rootNavigatorKey,
+        pageBuilder: (context, state) =>
+            _fadeSlidePage(state, const LoginHistoryScreen()),
       ),
       GoRoute(
         path: '/favorites',
         parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (context, state) =>
-            _instantPage(state, const FavoritesScreen()),
+            _fadeSlidePage(state, const FavoritesScreen()),
       ),
       GoRoute(
         path: '/my-works',
         parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (context, state) =>
-            _instantPage(state, const MyWorksScreen()),
+            _fadeSlidePage(state, const MyWorksScreen()),
       ),
       GoRoute(
         path: '/my-stats/received-likes',
         parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (context, state) =>
-            _instantPage(state, const MyReceivedWorksScreen(sort: 'likes')),
+            _fadeSlidePage(state, const MyReceivedWorksScreen(sort: 'likes')),
       ),
       GoRoute(
         path: '/my-stats/received-favorites',
         parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (context, state) =>
-            _instantPage(state, const MyReceivedWorksScreen(sort: 'favorites')),
+            _fadeSlidePage(state, const MyReceivedWorksScreen(sort: 'favorites')),
       ),
       GoRoute(
         path: '/my-liked-photos',
         parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (context, state) =>
-            _instantPage(state, const MyLikedPhotosScreen()),
+            _fadeSlidePage(state, const MyLikedPhotosScreen()),
       ),
       GoRoute(
         path: '/my-followers',
         parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (context, state) =>
-            _instantPage(state, const MyFollowListScreen(showFollowing: false)),
+            _fadeSlidePage(state, const MyFollowListScreen(showFollowing: false)),
       ),
       GoRoute(
         path: '/my-following',
         parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (context, state) =>
-            _instantPage(state, const MyFollowListScreen(showFollowing: true)),
+            _fadeSlidePage(state, const MyFollowListScreen(showFollowing: true)),
       ),
       GoRoute(
         path: '/my-spots',
         parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (context, state) =>
-            _instantPage(state, const MySpotsScreen()),
+            _fadeSlidePage(state, const MySpotsScreen()),
       ),
       GoRoute(
         path: '/add-spot',
         parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (context, state) =>
-            _instantPage(state, const AddSpotScreen()),
+            _fadeSlidePage(state, const AddSpotScreen()),
       ),
       GoRoute(
         path: '/my-plans',
         parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (context, state) =>
-            _instantPage(state, const MyPlansScreen()),
+            _fadeSlidePage(state, const MyPlansScreen()),
       ),
       GoRoute(
         path: '/challenges',
         parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (context, state) {
           final id = int.tryParse(state.uri.queryParameters['id'] ?? '');
-          return _instantPage(state, ChallengesScreen(challengeId: id));
+          return _fadeSlidePage(state, ChallengesScreen(challengeId: id));
         },
       ),
     ],

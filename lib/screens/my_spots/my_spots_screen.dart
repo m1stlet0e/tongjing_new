@@ -136,6 +136,7 @@ class _MySpotsScreenState extends State<MySpotsScreen> {
                             trailing: IconButton(
                               icon: const Icon(Icons.delete_outline),
                               onPressed: () async {
+                                final auth = context.read<AuthNotifier>();
                                 final ok = await showDialog<bool>(
                                   context: context,
                                   builder: (c) => AlertDialog(
@@ -149,10 +150,7 @@ class _MySpotsScreenState extends State<MySpotsScreen> {
                                 );
                                 if (ok == true) {
                                   try {
-                                    await context
-                                        .read<AuthNotifier>()
-                                        .api
-                                        .spotsUnlink(id);
+                                    await auth.api.spotsUnlink(id);
                                     await _load();
                                   } catch (e) {
                                     if (context.mounted) {

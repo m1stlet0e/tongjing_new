@@ -5,6 +5,7 @@
 //
 // 说明：该文件已补充中文注释，便于后续维护与交接。
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -26,18 +27,24 @@ class AuthNotifier extends ChangeNotifier {
   static const _kToken = 'auth_token';
   static const _kUser = 'user_info';
 
+  /// API 调用超时时间（10秒）
+  static const Duration _apiTimeout = Duration(seconds: 10);
+
   String? _token;
   UserModel? _user;
   bool _bootstrapping = true;
+  String? _initError; // 记录初始化错误信息
 
   String? get token => _token;
   UserModel? get user => _user;
   bool get isAuthenticated =>
       _token != null && _token!.isNotEmpty && _user != null;
   bool get bootstrapping => _bootstrapping;
+  String? get initError => _initError;
 
   Future<void> init() async {
     _bootstrapping = true;
+    _initError = null;
     notifyListeners();
     _token = _prefs.getString(_kToken);
     final raw = _prefs.getString(_kUser);
@@ -50,10 +57,21 @@ class AuthNotifier extends ChangeNotifier {
     }
     if (_token != null && _token!.isNotEmpty) {
       try {
-        _user = await api.authMe();
+        // 添加超时保护
+        _user = await api.authMe().timeout(
+          _apiTimeout,
+          onTimeout: () {
+            throw ApiException('网络超时，请检查网络连接');
+          },
+        );
         await _prefs.setString(_kUser, jsonEncode(_user!.toJson()));
-      } catch (_) {
-        await logout(clearRemote: false);
+        _initError = null;
+      } catch (e) {
+        // API 调用失败时，保留本地缓存的用户信息，允许用户正常使用
+        debugPrint('authMe failed: $e, keeping cached user');
+        _initError = e is ApiException ? e.message : '登录状态验证失败';
+        // 不再强制退出，保留 token 让用户可以继续使用
+        // 如果后续 API 调用失败会有更明确的错误提示
       }
     }
     _bootstrapping = false;

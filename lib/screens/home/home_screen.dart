@@ -9,13 +9,19 @@ import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:tongjing/models/photo_models.dart';
 import 'package:tongjing/providers/auth_provider.dart';
 import 'package:tongjing/services/api_service.dart';
+import 'package:tongjing/services/photo_state_sync_bus.dart';
 import 'package:tongjing/theme/app_colors.dart';
+import 'package:tongjing/theme/app_spacing.dart';
+import 'package:tongjing/theme/app_typography.dart';
+import 'package:tongjing/theme/app_shapes.dart';
 import 'package:tongjing/utils/remote_image.dart';
+import 'package:tongjing/utils/top_notice.dart';
 
 /// `HomeScreen`：页面组件，负责构建界面布局并响应用户操作。
 ///
@@ -68,6 +74,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   final Set<int> _likeBusy = {};
   final Set<int> _favoriteBusy = {};
+  final PhotoStateSyncBus _syncBus = PhotoStateSyncBus.instance;
 
   @override
   /// 组件初始化阶段执行一次，用于准备首屏数据与监听器。
@@ -76,10 +83,12 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _refresh();
+    _syncBus.addListener(_onPhotoStateSync);
   }
 
   @override
   void dispose() {
+    _syncBus.removeListener(_onPhotoStateSync);
     _search.dispose();
     super.dispose();
   }
@@ -95,6 +104,21 @@ class _HomeScreenState extends State<HomeScreen> {
       _hasMoreByTab.clear();
     });
     await _loadPage(refresh: true);
+  }
+
+  void _onPhotoStateSync() {
+    final e = _syncBus.lastEvent;
+    if (!mounted || e == null) return;
+    final idx = _photos.indexWhere((x) => x.id == e.photoId);
+    if (idx < 0) return;
+    final before = _photos[idx];
+      final next = before.copyWith(
+        isLiked: e.isLiked ?? before.isLiked,
+        likesCount: e.likesCount ?? before.likesCount,
+        isFavorited: e.isFavorited ?? before.isFavorited,
+        favoritesCount: e.favoritesCount ?? before.favoritesCount,
+      );
+      _replacePhotoInList(e.photoId, next);
   }
 
   Future<void> _loadPage({bool refresh = false}) async {
@@ -119,17 +143,18 @@ class _HomeScreenState extends State<HomeScreen> {
         isoMax: isoRange.$2,
       );
       if (!mounted || req != _feedReqId) return;
+      final synced = r.photos.map(_syncBus.patchPhoto).toList();
       setState(() {
         if (refresh) {
           _photos
             ..clear()
-            ..addAll(r.photos);
+            ..addAll(synced);
           _page = 2;
         } else {
-          _photos.addAll(r.photos);
+          _photos.addAll(synced);
           _page = page + 1;
         }
-        _hasMore = r.photos.length >= _feedPageLimit;
+        _hasMore = synced.length >= _feedPageLimit;
         _error = null;
       });
       final keyword = _search.text.trim().toLowerCase();
@@ -186,24 +211,6 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     });
     unawaited(_loadPage(refresh: true));
-  }
-
-  Future<void> _afterReturnFromDetail(int photoId) async {
-    if (!mounted) return;
-    final auth = context.read<AuthNotifier>();
-    if (!auth.isAuthenticated) return;
-    try {
-      final d = await auth.api.photoDetail(photoId);
-      if (!mounted) return;
-      _replacePhotoInList(photoId, d);
-      final snap = _photosByTab[_uiTab];
-      if (snap != null) {
-        final i = snap.indexWhere((x) => x.id == photoId);
-        if (i >= 0) {
-          snap[i] = d;
-        }
-      }
-    } catch (_) {}
   }
 
   /// 执行业务流程并返回该流程的处理结果。
@@ -357,16 +364,19 @@ class _HomeScreenState extends State<HomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.xxl,
+                AppSpacing.sm,
+                AppSpacing.xxl,
+                AppSpacing.sm,
+              ),
               child: Column(
                 children: [
                   Row(
                     children: [
-                      const Text(
+                      Text(
                         '同镜',
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
+                        style: AppTypography.pageTitle.copyWith(
                           color: AppColors.kleinBlue,
                         ),
                       ),
@@ -389,11 +399,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       filled: true,
                       fillColor: Colors.white,
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: AppShapes.radiusXlAll,
                         borderSide: const BorderSide(color: AppColors.borderLight),
                       ),
                       enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: AppShapes.radiusXlAll,
                         borderSide: const BorderSide(color: AppColors.borderLight),
                       ),
                     ),
@@ -429,8 +439,9 @@ class _HomeScreenState extends State<HomeScreen> {
     return Expanded(
       child: InkWell(
         onTap: () => _switchUiTab(key),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
           decoration: BoxDecoration(
             border: Border(
               bottom: BorderSide(
@@ -442,10 +453,7 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Text(
             label,
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontWeight: on ? FontWeight.w600 : FontWeight.normal,
-              color: on ? AppColors.kleinBlue : AppColors.textMuted,
-            ),
+            style: on ? AppTypography.tabSelected : AppTypography.tabUnselected,
           ),
         ),
       ),
@@ -537,12 +545,17 @@ class _HomeScreenState extends State<HomeScreen> {
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.sm,
+              AppSpacing.lg,
+              AppSpacing.huge,
+            ),
             sliver: SliverGrid(
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 2,
-                mainAxisSpacing: 12,
-                crossAxisSpacing: 12,
+                mainAxisSpacing: AppSpacing.lg,
+                crossAxisSpacing: AppSpacing.lg,
                 childAspectRatio: 0.72,
               ),
               delegate: SliverChildBuilderDelegate(
@@ -556,8 +569,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     item: p,
                     interactionsEnabled: true,
                     onOpenDetail: () async {
-                      await context.push('/photo/${p.id}');
-                      if (mounted) await _afterReturnFromDetail(p.id);
+                      final r = await context.push('/photo/${p.id}');
+                      if (!mounted) return;
+                      if (r == true) {
+                        await _refresh();
+                      }
                     },
                     onOpenAuthor: (p.userId != null && p.userId! > 0)
                         ? () => context.push('/user/${p.userId}')
@@ -618,6 +634,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     _likeBusy.add(photoId);
     _replacePhotoInList(photoId, optimistic);
+    HapticFeedback.selectionClick();
     try {
       final liked = await auth.api.photoToggleLike(photoId);
       if (!mounted) return;
@@ -631,10 +648,21 @@ class _HomeScreenState extends State<HomeScreen> {
           likesCount: count.clamp(0, 1 << 30),
         ),
       );
+      _syncBus.emit(
+        PhotoStateSyncEvent(
+          photoId: photoId,
+          isLiked: liked,
+          likesCount: count.clamp(0, 1 << 30),
+          photo: before.copyWith(
+            isLiked: liked,
+            likesCount: count.clamp(0, 1 << 30),
+          ),
+        ),
+      );
     } on ApiException catch (e) {
       _replacePhotoInList(photoId, before);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        showTopNotice(context, e.message, error: true);
       }
     } finally {
       _likeBusy.remove(photoId);
@@ -658,6 +686,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     _favoriteBusy.add(photoId);
     _replacePhotoInList(photoId, optimistic);
+    HapticFeedback.selectionClick();
     try {
       final fav = await auth.api.photoToggleFavorite(photoId);
       if (!mounted) return;
@@ -671,10 +700,21 @@ class _HomeScreenState extends State<HomeScreen> {
           favoritesCount: count.clamp(0, 1 << 30),
         ),
       );
+      _syncBus.emit(
+        PhotoStateSyncEvent(
+          photoId: photoId,
+          isFavorited: fav,
+          favoritesCount: count.clamp(0, 1 << 30),
+          photo: before.copyWith(
+            isFavorited: fav,
+            favoritesCount: count.clamp(0, 1 << 30),
+          ),
+        ),
+      );
     } on ApiException catch (e) {
       _replacePhotoInList(photoId, before);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        showTopNotice(context, e.message, error: true);
       }
     } finally {
       _favoriteBusy.remove(photoId);
@@ -710,7 +750,7 @@ class _PhotoTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: Colors.white,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: AppShapes.radiusXlAll,
       clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -723,14 +763,19 @@ class _PhotoTile extends StatelessWidget {
                 httpHeaders: kRemoteImageHttpHeaders,
                 fit: BoxFit.cover,
                 placeholder: (context, url) =>
-                    Container(color: const Color(0xFFEEEEEE)),
+                    Container(color: AppColors.placeholder),
                 errorWidget: (context, url, error) =>
                     const Icon(Icons.broken_image),
               ),
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.sm,
+              AppSpacing.xs,
+              AppSpacing.sm,
+              AppSpacing.sm,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -740,13 +785,12 @@ class _PhotoTile extends StatelessWidget {
                     item.title ?? '未命名',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 13,
+                    style: AppTypography.bodySmall.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
-                const SizedBox(height: 2),
+                AppSpacing.verticalXs,
                 onOpenAuthor != null
                     ? GestureDetector(
                         behavior: HitTestBehavior.opaque,
@@ -760,8 +804,7 @@ class _PhotoTile extends StatelessWidget {
                                     : '@${item.username}',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 11,
+                                style: AppTypography.labelSmall.copyWith(
                                   color: AppColors.kleinBlue,
                                   fontWeight: FontWeight.w600,
                                 ),
@@ -777,38 +820,47 @@ class _PhotoTile extends StatelessWidget {
                             : '@${item.username}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: AppColors.textMuted,
-                        ),
+                        style: AppTypography.labelSmall,
                       ),
-                  const SizedBox(height: 2),
-                  Text(
-                    _cameraLine(item),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
+                AppSpacing.verticalXs,
+                Text(
+                  _cameraLine(item),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.paramInfo,
+                ),
+                AppSpacing.verticalXs,
                   Row(
                     children: [
                       GestureDetector(
                         behavior: HitTestBehavior.opaque,
-                        onTap: interactionsEnabled ? onToggleLike : null,
-                        child: Row(
+                        onTap: null,
+                        child: InkResponse(
+                          onTap: interactionsEnabled ? onToggleLike : null,
+                          radius: 18,
+                          containedInkWell: false,
+                          child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(
-                              item.isLiked
-                                  ? Icons.favorite
-                                  : Icons.favorite_border,
-                              size: 14,
-                              color: item.isLiked
-                                  ? Colors.red
-                                  : AppColors.textMuted,
+                            TweenAnimationBuilder<double>(
+                              duration: const Duration(milliseconds: 90),
+                              curve: Curves.easeOutBack,
+                              tween: Tween<double>(
+                                begin: 1,
+                                end: item.isLiked ? 1.14 : 1.0,
+                              ),
+                              builder: (context, scale, child) {
+                                return Transform.scale(scale: scale, child: child);
+                              },
+                              child: Icon(
+                                item.isLiked
+                                    ? Icons.favorite
+                                    : Icons.favorite_border,
+                                size: 14,
+                                color: item.isLiked
+                                    ? Colors.red
+                                    : AppColors.textMuted,
+                              ),
                             ),
                             Text(
                               ' ${item.likesCount}',
@@ -821,26 +873,39 @@ class _PhotoTile extends StatelessWidget {
                             ),
                           ],
                         ),
+                        ),
                       ),
-                      const SizedBox(width: 10),
+                      AppSpacing.horizontalLg,
                       GestureDetector(
                         behavior: HitTestBehavior.opaque,
-                        onTap: interactionsEnabled ? onToggleFavorite : null,
-                        child: Icon(
-                          item.isFavorited ? Icons.star : Icons.star_border,
-                          size: 14,
-                          color: item.isFavorited
-                              ? AppColors.champagneGold
-                              : AppColors.textMuted,
+                        onTap: null,
+                        child: InkResponse(
+                          onTap: interactionsEnabled ? onToggleFavorite : null,
+                          radius: 18,
+                          child: TweenAnimationBuilder<double>(
+                            duration: const Duration(milliseconds: 90),
+                            curve: Curves.easeOutBack,
+                            tween: Tween<double>(
+                              begin: 1,
+                              end: item.isFavorited ? 1.14 : 1.0,
+                            ),
+                            builder: (context, scale, child) {
+                              return Transform.scale(scale: scale, child: child);
+                            },
+                            child: Icon(
+                              item.isFavorited ? Icons.star : Icons.star_border,
+                              size: 14,
+                              color: item.isFavorited
+                                  ? AppColors.favorite
+                                  : AppColors.textMuted,
+                            ),
+                          ),
                         ),
                       ),
                       const Spacer(),
                       Text(
                         _distanceTag(item),
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: AppColors.textMuted,
-                        ),
+                        style: AppTypography.labelSmall,
                       ),
                     ],
                   ),

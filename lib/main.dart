@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tongjing/providers/auth_provider.dart';
+import 'package:tongjing/providers/settings_provider.dart';
 import 'package:tongjing/router/app_router.dart';
 import 'package:tongjing/services/cloudbase_gate.dart';
 import 'package:tongjing/services/wechat_auth_gate.dart';
@@ -18,18 +19,131 @@ import 'package:tongjing/config/app_config.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await CloudbaseGate.ensureInitialized();
-  if (AppConfig.enableWechatLogin) {
-    await WechatAuthGate.ensureInitialized();
+  runApp(const TongjingBootstrapApp());
+}
+
+class _BootstrapReady {
+  const _BootstrapReady({
+    required this.auth,
+    required this.settings,
+    required this.router,
+  });
+
+  final AuthNotifier auth;
+  final SettingsNotifier settings;
+  final GoRouter router;
+}
+
+class TongjingBootstrapApp extends StatefulWidget {
+  const TongjingBootstrapApp({super.key});
+
+  @override
+  State<TongjingBootstrapApp> createState() => _TongjingBootstrapAppState();
+}
+
+class _TongjingBootstrapAppState extends State<TongjingBootstrapApp> {
+  late Future<_BootstrapReady> _ready = _bootstrap();
+
+  Future<_BootstrapReady> _bootstrap() async {
+    await CloudbaseGate.ensureInitialized();
+    if (AppConfig.enableWechatLogin) {
+      await WechatAuthGate.ensureInitialized();
+    }
+    debugPrint(
+      'CloudBase init status: env=${AppConfig.cloudbaseEnvId}, appReady=${CloudbaseGate.app != null}, error=${CloudbaseGate.lastInitError}',
+    );
+    final prefs = await SharedPreferences.getInstance();
+    final auth = AuthNotifier(prefs);
+    await auth.init();
+    final settings = SettingsNotifier();
+    await settings.init();
+    final router = createAppRouter(auth);
+    return _BootstrapReady(auth: auth, settings: settings, router: router);
   }
-  debugPrint(
-    'CloudBase init status: env=${AppConfig.cloudbaseEnvId}, appReady=${CloudbaseGate.app != null}, error=${CloudbaseGate.lastInitError}',
-  );
-  final prefs = await SharedPreferences.getInstance();
-  final auth = AuthNotifier(prefs);
-  await auth.init();
-  final router = createAppRouter(auth);
-  runApp(TongjingApp(auth: auth, router: router));
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<_BootstrapReady>(
+      future: _ready,
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.done && snap.hasData) {
+          return TongjingApp(
+            auth: snap.data!.auth,
+            settings: snap.data!.settings,
+            router: snap.data!.router,
+          );
+        }
+        if (snap.connectionState == ConnectionState.done && snap.hasError) {
+          return MaterialApp(
+            debugShowCheckedModeBanner: false,
+            home: Scaffold(
+              backgroundColor: const Color(0xFF0E2A7B),
+              body: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      '同镜',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 32,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      '启动失败，请重试',
+                      style: TextStyle(color: Color(0xFFDDE3F6)),
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton(
+                      onPressed: () {
+                        setState(() {
+                          _ready = _bootstrap();
+                        });
+                      },
+                      child: const Text('重试'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+        return const MaterialApp(
+          debugShowCheckedModeBanner: false,
+          home: Scaffold(
+            backgroundColor: Color(0xFF0E2A7B),
+            body: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '同镜',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 34,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.5,
+                    ),
+                  ),
+                  SizedBox(height: 14),
+                  SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.2,
+                      color: Color(0xFFDDE3F6),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
 
 /// `TongjingApp`：核心类型定义，承载该模块的主要职责。
@@ -39,10 +153,12 @@ class TongjingApp extends StatelessWidget {
   const TongjingApp({
     super.key,
     required this.auth,
+    required this.settings,
     required this.router,
   });
 
   final AuthNotifier auth;
+  final SettingsNotifier settings;
   final GoRouter router;
 
   @override
@@ -50,8 +166,11 @@ class TongjingApp extends StatelessWidget {
   ///
   /// 方法：`build`。
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider<AuthNotifier>.value(
-      value: auth,
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider<AuthNotifier>.value(value: auth),
+        ChangeNotifierProvider<SettingsNotifier>.value(value: settings),
+      ],
       child: MaterialApp.router(
         title: '同镜',
         debugShowCheckedModeBanner: false,
